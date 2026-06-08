@@ -28,8 +28,8 @@ A time tracking application for managing clients, projects, and time entries. Bu
 The application uses environment variables for authentication credentials. For local development, create a `.env` file in the root directory:
 
 ```env
-VITE_USERNAME=danielarq
-VITE_PASSWORD=apostol.maracucho
+VITE_USERNAME=your_username
+VITE_PASSWORD=your_password
 ```
 
 **Note:** The `.env` file is included in `.gitignore` and will not be committed to the repository.

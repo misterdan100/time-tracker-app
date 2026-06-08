@@ -1,0 +1,193 @@
+import React, { useState } from 'react';
+import { Link } from 'react-router-dom';
+import { useApp } from '../context/AppContext';
+import { Button } from '../components/ui/button';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '../components/ui/table';
+import ProjectDialog from '../components/dialogs/ProjectDialog';
+import { Project, ProjectStatus } from '../types';
+import { Plus, Pencil, Trash2 } from 'lucide-react';
+
+const Projects: React.FC = () => {
+  const { clients, projects, addProject, updateProject, deleteProject, timeEntries, cities, addCity } = useApp();
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editProject, setEditProject] = useState<Project | null>(null);
+  const [statusFilter, setStatusFilter] = useState<ProjectStatus | 'All'>('All');
+
+  const filteredProjects = statusFilter === 'All'
+    ? projects
+    : projects.filter((p) => p.status === statusFilter);
+
+  const handleSave = (projectData: Omit<Project, 'id'>) => {
+    if (editProject) {
+      updateProject(editProject.id, projectData);
+      setEditProject(null);
+    } else {
+      addProject(projectData);
+    }
+  };
+
+  const handleEdit = (project: Project) => {
+    setEditProject(project);
+    setDialogOpen(true);
+  };
+
+  const handleDelete = (projectId: string) => {
+    const hasTimeEntries = timeEntries.some((te) => te.projectId === projectId);
+    if (hasTimeEntries) {
+      alert('You cannot delete this project because it has associated time entries.');
+      return;
+    }
+    if (confirm('Are you sure you want to delete this project?')) {
+      deleteProject(projectId);
+    }
+  };
+
+  const handleDialogClose = () => {
+    setDialogOpen(false);
+    setEditProject(null);
+  };
+
+  const getClientName = (clientId: string) => {
+    const client = clients.find((c) => c.id === clientId);
+    return client?.companyName || 'Unknown Client';
+  };
+
+  const getProjectHours = (projectId: string) => {
+    const projectEntries = timeEntries.filter((te) => te.projectId === projectId);
+    return projectEntries.reduce((total, entry) => total + entry.hours, 0);
+  };
+
+  const statusOptions: Array<ProjectStatus | 'All'> = ['All', 'Active', 'Paused', 'Completed'];
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-foreground">Projects</h1>
+          <p className="text-muted-foreground">Manage your projects</p>
+        </div>
+        <Button onClick={() => setDialogOpen(true)} className="gap-2">
+          <Plus className="w-4 h-4" />
+          Add Project
+        </Button>
+      </div>
+
+      <div className="flex items-center gap-4">
+        <label className="text-sm font-medium">Filter by status:</label>
+        <div className="flex gap-2">
+          {statusOptions.map((status) => (
+            <Button
+              key={status}
+              variant={statusFilter === status ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setStatusFilter(status)}
+            >
+              {status}
+            </Button>
+          ))}
+        </div>
+      </div>
+
+      <div className="border rounded-lg">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Name</TableHead>
+              <TableHead>Client</TableHead>
+              <TableHead>City</TableHead>
+              <TableHead>Address</TableHead>
+              <TableHead>Work Type</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Hours</TableHead>
+              <TableHead className="text-right">Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {filteredProjects.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
+                  No projects registered
+                </TableCell>
+              </TableRow>
+            ) : (
+              filteredProjects.map((project) => (
+                <TableRow key={project.id}>
+                  <TableCell className="font-medium">
+                    <Link
+                      to={`/project/${project.id}`}
+                      className="hover:underline text-primary"
+                    >
+                      {project.name}
+                    </Link>
+                  </TableCell>
+                  <TableCell>
+                    <Link
+                      to={`/client/${project.clientId}`}
+                      className="hover:underline text-primary"
+                    >
+                      {getClientName(project.clientId)}
+                    </Link>
+                  </TableCell>
+                  <TableCell>{project.city || '-'}</TableCell>
+                  <TableCell>{project.address || '-'}</TableCell>
+                  <TableCell>{project.workType}</TableCell>
+                  <TableCell>
+                    <span
+                      className={`px-2 py-1 rounded-full text-xs font-medium ${
+                        project.status === 'Active'
+                          ? 'bg-green-100 text-green-800'
+                          : project.status === 'Paused'
+                          ? 'bg-yellow-100 text-yellow-800'
+                          : 'bg-gray-100 text-gray-800'
+                      }`}
+                    >
+                      {project.status}
+                    </span>
+                  </TableCell>
+                  <TableCell className="font-medium">{getProjectHours(project.id).toFixed(2)}h</TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex justify-end gap-2">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleEdit(project)}
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleDelete(project.id)}
+                      >
+                        <Trash2 className="w-4 h-4 text-destructive" />
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </div>
+
+      <ProjectDialog
+        open={dialogOpen}
+        onOpenChange={handleDialogClose}
+        onSave={handleSave}
+        editProject={editProject}
+        clients={clients}
+        cities={cities}
+        onAddCity={addCity}
+      />
+    </div>
+  );
+};
+
+export default Projects;
