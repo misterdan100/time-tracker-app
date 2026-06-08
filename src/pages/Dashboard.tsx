@@ -1,9 +1,10 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
+import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
-import { Clock, Building2, Users, Calendar, Sparkles } from 'lucide-react';
-import { format, startOfMonth, endOfMonth, isWithinInterval, startOfWeek, endOfWeek, eachDayOfInterval, parseISO } from 'date-fns';
+import { Clock, Building2, Users, Calendar, Sparkles, ChevronLeft, ChevronRight } from 'lucide-react';
+import { format, startOfMonth, endOfMonth, isWithinInterval, startOfWeek, endOfWeek, eachDayOfInterval, parseISO, addWeeks } from 'date-fns';
 import { enUS } from 'date-fns/locale';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
@@ -57,10 +58,13 @@ const Dashboard: React.FC = () => {
     return project?.color || '#3b82f6';
   };
 
-  // Calcular horas por día de la semana actual
-  const weekStart = startOfWeek(now, { weekStartsOn: 1 }); // Lunes como inicio
-  const weekEnd = endOfWeek(now, { weekStartsOn: 1 });
+  // Navegación de semanas (0 = semana actual, negativo = semanas anteriores)
+  const [weekOffset, setWeekOffset] = useState(0);
+  const referenceDate = addWeeks(now, weekOffset);
+  const weekStart = startOfWeek(referenceDate, { weekStartsOn: 1 }); // Lunes como inicio
+  const weekEnd = endOfWeek(referenceDate, { weekStartsOn: 1 });
   const daysOfWeek = eachDayOfInterval({ start: weekStart, end: weekEnd });
+  const weekRangeLabel = `${format(weekStart, 'MMM d', { locale: enUS })} – ${format(weekEnd, 'MMM d, yyyy', { locale: enUS })}`;
 
   const weeklyData = daysOfWeek.map((day) => {
     const dayEntries = timeEntries.filter((entry) => {
@@ -139,7 +143,33 @@ const Dashboard: React.FC = () => {
 
       <Card>
         <CardHeader>
-          <CardTitle>Time by Day (This Week)</CardTitle>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <CardTitle>Time by Day</CardTitle>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => setWeekOffset((o) => o - 1)}
+                aria-label="Previous week"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <span className="min-w-[170px] text-center text-sm font-medium text-muted-foreground">
+                {weekOffset === 0 ? `This week · ${weekRangeLabel}` : weekRangeLabel}
+              </span>
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => setWeekOffset((o) => Math.min(0, o + 1))}
+                disabled={weekOffset >= 0}
+                aria-label="Next week"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
         </CardHeader>
         <CardContent>
           <ResponsiveContainer width="100%" height={300}>
