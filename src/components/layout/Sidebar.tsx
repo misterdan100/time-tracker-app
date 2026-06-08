@@ -39,7 +39,7 @@ const Sidebar: React.FC<SidebarProps> = ({ onOpenTimeEntry }) => {
   ];
 
   return (
-    <aside className="w-64 bg-card border-r border-border p-4 flex flex-col">
+    <aside className="w-64 shrink-0 h-screen bg-card border-r border-border p-4 flex flex-col">
       <div className="mb-8 text-center">
         <h1 className="text-xl font-bold text-foreground">Daniel Arq</h1>
         <p className="text-sm text-muted-foreground">Time Tracker</p>
@@ -53,7 +53,7 @@ const Sidebar: React.FC<SidebarProps> = ({ onOpenTimeEntry }) => {
         Log Time
       </Button>
 
-      <nav className="flex-1 space-y-2">
+      <nav className="flex-1 min-h-0 overflow-y-auto space-y-2">
         {navItems.map((item) => {
           const Icon = item.icon;
           const isActive = location.pathname === item.path;
