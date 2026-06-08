@@ -13,8 +13,16 @@ import TimeEntryDialog from './components/dialogs/TimeEntryDialog';
 
 function AppContent() {
   const { projects, addTimeEntry } = useApp();
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, loading } = useAuth();
   const [timeEntryOpen, setTimeEntryOpen] = useState(false);
+
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background text-muted-foreground">
+        Loading...
+      </div>
+    );
+  }
 
   if (!isAuthenticated) {
     return <LoginPage />;

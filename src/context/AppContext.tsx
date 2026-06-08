@@ -1,161 +1,280 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { AppState, Client, Project, TimeEntry } from '../types';
+import { supabase } from '../lib/supabase';
+import { useAuth } from './AuthContext';
 
 interface AppContextType {
   clients: Client[];
   projects: Project[];
   timeEntries: TimeEntry[];
   cities: string[];
-  addClient: (client: Omit<Client, 'id'>) => void;
-  updateClient: (id: string, client: Partial<Client>) => void;
-  deleteClient: (id: string) => void;
-  addProject: (project: Omit<Project, 'id'>) => void;
-  updateProject: (id: string, project: Partial<Project>) => void;
-  deleteProject: (id: string) => void;
-  addTimeEntry: (entry: Omit<TimeEntry, 'id'>) => void;
-  updateTimeEntry: (id: string, entry: Partial<TimeEntry>) => void;
-  deleteTimeEntry: (id: string) => void;
+  loading: boolean;
+  addClient: (client: Omit<Client, 'id'>) => Promise<void>;
+  updateClient: (id: string, client: Partial<Client>) => Promise<void>;
+  deleteClient: (id: string) => Promise<void>;
+  addProject: (project: Omit<Project, 'id'>) => Promise<void>;
+  updateProject: (id: string, project: Partial<Project>) => Promise<void>;
+  deleteProject: (id: string) => Promise<void>;
+  addTimeEntry: (entry: Omit<TimeEntry, 'id'>) => Promise<void>;
+  updateTimeEntry: (id: string, entry: Partial<TimeEntry>) => Promise<void>;
+  deleteTimeEntry: (id: string) => Promise<void>;
   addCity: (city: string) => void;
   exportData: () => void;
-  importData: (data: AppState) => void;
+  importData: (data: AppState) => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
-
-const STORAGE_KEY = 'time-tracker-data';
-
-const generateId = (): string => {
-  return crypto.randomUUID();
-};
 
 const generateRandomColor = (): string => {
   const colors = [
     '#ef4444', '#f97316', '#f59e0b', '#84cc16', '#22c55e',
     '#10b981', '#14b8a6', '#06b6d4', '#0ea5e9', '#3b82f6',
     '#6366f1', '#8b5cf6', '#a855f7', '#d946ef', '#ec4899',
-    '#f43f5e'
+    '#f43f5e',
   ];
   return colors[Math.floor(Math.random() * colors.length)];
 };
 
+// ---------- row <-> domain mappers ----------
+
+const rowToClient = (r: any): Client => ({
+  id: r.id,
+  companyName: r.company_name,
+  ownerName: r.owner_name,
+  country: r.country,
+  email: r.email,
+});
+
+const clientToRow = (c: Partial<Client>): Record<string, unknown> => {
+  const row: Record<string, unknown> = {};
+  if (c.companyName !== undefined) row.company_name = c.companyName;
+  if (c.ownerName !== undefined) row.owner_name = c.ownerName;
+  if (c.country !== undefined) row.country = c.country;
+  if (c.email !== undefined) row.email = c.email;
+  return row;
+};
+
+const rowToProject = (r: any): Project => ({
+  id: r.id,
+  name: r.name,
+  address: r.address,
+  city: r.city,
+  clientId: r.client_id,
+  workType: r.work_type,
+  status: r.status,
+  color: r.color,
+});
+
+const projectToRow = (p: Partial<Project>): Record<string, unknown> => {
+  const row: Record<string, unknown> = {};
+  if (p.name !== undefined) row.name = p.name;
+  if (p.address !== undefined) row.address = p.address;
+  if (p.city !== undefined) row.city = p.city;
+  if (p.clientId !== undefined) row.client_id = p.clientId;
+  if (p.workType !== undefined) row.work_type = p.workType;
+  if (p.status !== undefined) row.status = p.status;
+  if (p.color !== undefined) row.color = p.color;
+  return row;
+};
+
+const rowToTimeEntry = (r: any): TimeEntry => ({
+  id: r.id,
+  projectId: r.project_id,
+  date: r.date,
+  hours: Number(r.hours),
+});
+
+const timeEntryToRow = (e: Partial<TimeEntry>): Record<string, unknown> => {
+  const row: Record<string, unknown> = {};
+  if (e.projectId !== undefined) row.project_id = e.projectId;
+  if (e.date !== undefined) row.date = e.date;
+  if (e.hours !== undefined) row.hours = e.hours;
+  return row;
+};
+
+const citiesFromProjects = (projects: Project[]): string[] =>
+  Array.from(new Set(projects.map((p) => p.city).filter(Boolean)));
+
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [state, setState] = useState<AppState>(() => {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) {
-      try {
-        const data = JSON.parse(stored);
-        // Migrate projects without color
-        const migratedProjects = data.projects.map((p: Project) => ({
-          ...p,
-          color: p.color || generateRandomColor(),
-          city: p.city || '',
-        }));
-        // Extract unique cities from projects
-        const cities = Array.from(
-          new Set(migratedProjects.map((p: Project) => p.city).filter(Boolean))
-        );
-        return {
-          ...data,
-          projects: migratedProjects,
-          cities: data.cities || cities,
-        };
-      } catch (error) {
-        console.error('Error loading data from localStorage:', error);
-        return {
-          clients: [],
-          projects: [],
-          timeEntries: [],
-          cities: [],
-        };
-      }
-    }
-    return {
-      clients: [],
-      projects: [],
-      timeEntries: [],
-      cities: [],
-    };
-  });
+  const { isAuthenticated } = useAuth();
+  const [clients, setClients] = useState<Client[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [timeEntries, setTimeEntries] = useState<TimeEntry[]>([]);
+  const [cities, setCities] = useState<string[]>([]);
+  const [loading, setLoading] = useState(false);
 
-  // Save to localStorage whenever state changes
+  const fetchAll = useCallback(async () => {
+    setLoading(true);
+    const [clientsRes, projectsRes, entriesRes] = await Promise.all([
+      supabase.from('clients').select('*').order('created_at', { ascending: true }),
+      supabase.from('projects').select('*').order('created_at', { ascending: true }),
+      supabase.from('time_entries').select('*').order('date', { ascending: false }),
+    ]);
+
+    if (clientsRes.error) console.error('Error loading clients:', clientsRes.error.message);
+    if (projectsRes.error) console.error('Error loading projects:', projectsRes.error.message);
+    if (entriesRes.error) console.error('Error loading time entries:', entriesRes.error.message);
+
+    const loadedProjects = (projectsRes.data ?? []).map(rowToProject);
+    setClients((clientsRes.data ?? []).map(rowToClient));
+    setProjects(loadedProjects);
+    setTimeEntries((entriesRes.data ?? []).map(rowToTimeEntry));
+    setCities(citiesFromProjects(loadedProjects));
+    setLoading(false);
+  }, []);
+
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  }, [state]);
+    if (isAuthenticated) {
+      fetchAll();
+    } else {
+      setClients([]);
+      setProjects([]);
+      setTimeEntries([]);
+      setCities([]);
+    }
+  }, [isAuthenticated, fetchAll]);
 
-  const addClient = (client: Omit<Client, 'id'>) => {
-    setState(prev => ({
-      ...prev,
-      clients: [...prev.clients, { ...client, id: generateId() }],
-    }));
+  // ---------- clients ----------
+
+  const addClient = async (client: Omit<Client, 'id'>) => {
+    const { data, error } = await supabase
+      .from('clients')
+      .insert(clientToRow(client))
+      .select()
+      .single();
+    if (error) {
+      console.error('Error adding client:', error.message);
+      return;
+    }
+    setClients((prev) => [...prev, rowToClient(data)]);
   };
 
-  const updateClient = (id: string, updates: Partial<Client>) => {
-    setState(prev => ({
-      ...prev,
-      clients: prev.clients.map(c => (c.id === id ? { ...c, ...updates } : c)),
-    }));
+  const updateClient = async (id: string, updates: Partial<Client>) => {
+    const { data, error } = await supabase
+      .from('clients')
+      .update(clientToRow(updates))
+      .eq('id', id)
+      .select()
+      .single();
+    if (error) {
+      console.error('Error updating client:', error.message);
+      return;
+    }
+    setClients((prev) => prev.map((c) => (c.id === id ? rowToClient(data) : c)));
   };
 
-  const deleteClient = (id: string) => {
-    setState(prev => ({
-      ...prev,
-      clients: prev.clients.filter(c => c.id !== id),
-    }));
+  const deleteClient = async (id: string) => {
+    const { error } = await supabase.from('clients').delete().eq('id', id);
+    if (error) {
+      console.error('Error deleting client:', error.message);
+      return;
+    }
+    // DB cascades projects + time entries; mirror that in local state.
+    const projectIds = projects.filter((p) => p.clientId === id).map((p) => p.id);
+    setClients((prev) => prev.filter((c) => c.id !== id));
+    setProjects((prev) => prev.filter((p) => p.clientId !== id));
+    setTimeEntries((prev) => prev.filter((te) => !projectIds.includes(te.projectId)));
   };
 
-  const addProject = (project: Omit<Project, 'id'>) => {
-    setState(prev => ({
-      ...prev,
-      projects: [...prev.projects, { ...project, id: generateId(), color: generateRandomColor() }],
-    }));
+  // ---------- projects ----------
+
+  const addProject = async (project: Omit<Project, 'id'>) => {
+    const row = projectToRow(project);
+    row.color = project.color || generateRandomColor();
+    const { data, error } = await supabase
+      .from('projects')
+      .insert(row)
+      .select()
+      .single();
+    if (error) {
+      console.error('Error adding project:', error.message);
+      return;
+    }
+    const newProject = rowToProject(data);
+    setProjects((prev) => [...prev, newProject]);
+    if (newProject.city && !cities.includes(newProject.city)) {
+      setCities((prev) => [...prev, newProject.city]);
+    }
   };
 
-  const updateProject = (id: string, updates: Partial<Project>) => {
-    setState(prev => ({
-      ...prev,
-      projects: prev.projects.map(p => (p.id === id ? { ...p, ...updates } : p)),
-    }));
+  const updateProject = async (id: string, updates: Partial<Project>) => {
+    const { data, error } = await supabase
+      .from('projects')
+      .update(projectToRow(updates))
+      .eq('id', id)
+      .select()
+      .single();
+    if (error) {
+      console.error('Error updating project:', error.message);
+      return;
+    }
+    const updated = rowToProject(data);
+    setProjects((prev) => prev.map((p) => (p.id === id ? updated : p)));
+    if (updated.city && !cities.includes(updated.city)) {
+      setCities((prev) => [...prev, updated.city]);
+    }
   };
 
-  const deleteProject = (id: string) => {
-    setState(prev => ({
-      ...prev,
-      projects: prev.projects.filter(p => p.id !== id),
-      timeEntries: prev.timeEntries.filter(te => te.projectId !== id),
-    }));
+  const deleteProject = async (id: string) => {
+    const { error } = await supabase.from('projects').delete().eq('id', id);
+    if (error) {
+      console.error('Error deleting project:', error.message);
+      return;
+    }
+    setProjects((prev) => prev.filter((p) => p.id !== id));
+    setTimeEntries((prev) => prev.filter((te) => te.projectId !== id));
   };
 
-  const addTimeEntry = (entry: Omit<TimeEntry, 'id'>) => {
-    setState(prev => ({
-      ...prev,
-      timeEntries: [...prev.timeEntries, { ...entry, id: generateId() }],
-    }));
+  // ---------- time entries ----------
+
+  const addTimeEntry = async (entry: Omit<TimeEntry, 'id'>) => {
+    const { data, error } = await supabase
+      .from('time_entries')
+      .insert(timeEntryToRow(entry))
+      .select()
+      .single();
+    if (error) {
+      console.error('Error adding time entry:', error.message);
+      return;
+    }
+    setTimeEntries((prev) => [rowToTimeEntry(data), ...prev]);
   };
 
-  const updateTimeEntry = (id: string, updates: Partial<TimeEntry>) => {
-    setState(prev => ({
-      ...prev,
-      timeEntries: prev.timeEntries.map(te => (te.id === id ? { ...te, ...updates } : te)),
-    }));
+  const updateTimeEntry = async (id: string, updates: Partial<TimeEntry>) => {
+    const { data, error } = await supabase
+      .from('time_entries')
+      .update(timeEntryToRow(updates))
+      .eq('id', id)
+      .select()
+      .single();
+    if (error) {
+      console.error('Error updating time entry:', error.message);
+      return;
+    }
+    setTimeEntries((prev) => prev.map((te) => (te.id === id ? rowToTimeEntry(data) : te)));
   };
 
-  const deleteTimeEntry = (id: string) => {
-    setState(prev => ({
-      ...prev,
-      timeEntries: prev.timeEntries.filter(te => te.id !== id),
-    }));
+  const deleteTimeEntry = async (id: string) => {
+    const { error } = await supabase.from('time_entries').delete().eq('id', id);
+    if (error) {
+      console.error('Error deleting time entry:', error.message);
+      return;
+    }
+    setTimeEntries((prev) => prev.filter((te) => te.id !== id));
   };
+
+  // ---------- cities (local autocomplete helper) ----------
 
   const addCity = (city: string) => {
-    if (city && !state.cities.includes(city)) {
-      setState(prev => ({
-        ...prev,
-        cities: [...prev.cities, city],
-      }));
+    if (city && !cities.includes(city)) {
+      setCities((prev) => [...prev, city]);
     }
   };
 
+  // ---------- export / import ----------
+
   const exportData = () => {
+    const state: AppState = { clients, projects, timeEntries, cities };
     const dataStr = JSON.stringify(state, null, 2);
     const dataBlob = new Blob([dataStr], { type: 'application/json' });
     const url = URL.createObjectURL(dataBlob);
@@ -166,17 +285,43 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     URL.revokeObjectURL(url);
   };
 
-  const importData = (data: AppState) => {
-    setState(data);
+  const importData = async (data: AppState) => {
+    if (!data) return;
+    try {
+      if (data.clients?.length) {
+        const rows = data.clients.map((c) => ({ id: c.id, ...clientToRow(c) }));
+        const { error } = await supabase.from('clients').upsert(rows);
+        if (error) throw error;
+      }
+      if (data.projects?.length) {
+        const rows = data.projects.map((p) => ({
+          id: p.id,
+          ...projectToRow(p),
+          color: p.color || generateRandomColor(),
+        }));
+        const { error } = await supabase.from('projects').upsert(rows);
+        if (error) throw error;
+      }
+      if (data.timeEntries?.length) {
+        const rows = data.timeEntries.map((e) => ({ id: e.id, ...timeEntryToRow(e) }));
+        const { error } = await supabase.from('time_entries').upsert(rows);
+        if (error) throw error;
+      }
+      await fetchAll();
+    } catch (error) {
+      console.error('Error importing data:', error);
+      alert('Error importing data. Check the file and try again.');
+    }
   };
 
   return (
     <AppContext.Provider
       value={{
-        clients: state.clients,
-        projects: state.projects,
-        timeEntries: state.timeEntries,
-        cities: state.cities,
+        clients,
+        projects,
+        timeEntries,
+        cities,
+        loading,
         addClient,
         updateClient,
         deleteClient,

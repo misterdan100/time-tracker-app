@@ -1,51 +1,61 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import type { Session } from '@supabase/supabase-js';
+import { supabase } from '../lib/supabase';
 
 interface AuthContextType {
   isAuthenticated: boolean;
-  login: (username: string, password: string) => boolean;
-  logout: () => void;
+  loading: boolean;
+  userId: string | null;
+  login: (email: string, password: string) => Promise<{ error: string | null }>;
+  logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const AUTH_STORAGE_KEY = 'time-tracker-auth';
-
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [session, setSession] = useState<Session | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Check if user is already authenticated on mount
-    const storedAuth = localStorage.getItem(AUTH_STORAGE_KEY);
-    if (storedAuth === 'true') {
-      setIsAuthenticated(true);
-    }
+    // Restore any existing session on mount
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session);
+      setLoading(false);
+    });
+
+    // Keep session in sync (login/logout/refresh, including other tabs)
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, newSession) => {
+      setSession(newSession);
+      setLoading(false);
+    });
+
+    return () => {
+      listener.subscription.unsubscribe();
+    };
   }, []);
 
-  const login = (username: string, password: string): boolean => {
-    // Credentials from environment variables
-    const validUsername = import.meta.env.VITE_USERNAME;
-    const validPassword = import.meta.env.VITE_PASSWORD;
-    
-    if (!validUsername || !validPassword) {
-      console.error('Environment variables VITE_USERNAME and VITE_PASSWORD must be set');
-      return false;
+  const login = async (email: string, password: string): Promise<{ error: string | null }> => {
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) {
+      return { error: error.message };
     }
-    
-    if (username === validUsername && password === validPassword) {
-      setIsAuthenticated(true);
-      localStorage.setItem(AUTH_STORAGE_KEY, 'true');
-      return true;
-    }
-    return false;
+    return { error: null };
   };
 
-  const logout = () => {
-    setIsAuthenticated(false);
-    localStorage.removeItem(AUTH_STORAGE_KEY);
+  const logout = async () => {
+    await supabase.auth.signOut();
   };
 
   return (
-    <AuthContext.Provider value={{ isAuthenticated, login, logout }}>
+    <AuthContext.Provider
+      value={{
+        isAuthenticated: !!session,
+        loading,
+        userId: session?.user.id ?? null,
+        login,
+        logout,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

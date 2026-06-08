@@ -7,23 +7,26 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Clock } from 'lucide-react';
 
 const LoginPage: React.FC = () => {
-  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
   const { login } = useAuth();
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    
-    if (!username || !password) {
-      setError('Please enter both username and password');
+
+    if (!email || !password) {
+      setError('Please enter both email and password');
       return;
     }
 
-    const success = login(username, password);
-    if (!success) {
-      setError('Invalid username or password');
+    setSubmitting(true);
+    const { error: loginError } = await login(email, password);
+    setSubmitting(false);
+    if (loginError) {
+      setError('Invalid email or password');
     }
   };
 
@@ -42,13 +45,13 @@ const LoginPage: React.FC = () => {
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="username">Username</Label>
+              <Label htmlFor="email">Email</Label>
               <Input
-                id="username"
-                type="text"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                placeholder="Enter your username"
+                id="email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="Enter your email"
                 required
               />
             </div>
@@ -68,8 +71,8 @@ const LoginPage: React.FC = () => {
                 {error}
               </div>
             )}
-            <Button type="submit" className="w-full">
-              Sign In
+            <Button type="submit" className="w-full" disabled={submitting}>
+              {submitting ? 'Signing in...' : 'Sign In'}
             </Button>
           </form>
         </CardContent>
