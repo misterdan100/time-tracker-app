@@ -45,6 +45,14 @@ const Sidebar: React.FC<SidebarProps> = ({ onOpenTimeEntry }) => {
         <p className="text-sm text-muted-foreground">Time Tracker</p>
       </div>
 
+      <Button
+        onClick={onOpenTimeEntry}
+        className="w-full justify-start gap-2 mb-4"
+      >
+        <Plus className="w-4 h-4" />
+        Log Time
+      </Button>
+
       <nav className="flex-1 space-y-2">
         {navItems.map((item) => {
           const Icon = item.icon;
@@ -67,13 +75,6 @@ const Sidebar: React.FC<SidebarProps> = ({ onOpenTimeEntry }) => {
       </nav>
 
       <div className="space-y-2 pt-4 border-t border-border">
-        <Button
-          onClick={onOpenTimeEntry}
-          className="w-full justify-start gap-2"
-        >
-          <Plus className="w-4 h-4" />
-          Log Time
-        </Button>
         <Button
           onClick={exportData}
           variant="outline"
