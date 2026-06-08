@@ -61,17 +61,17 @@ const ClientDetail: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={() => navigate('/clients')}>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-3 min-w-0">
+          <Button variant="ghost" size="icon" className="shrink-0" onClick={() => navigate('/clients')}>
             <ArrowLeft className="w-4 h-4" />
           </Button>
-          <div>
-            <h1 className="text-3xl font-bold text-foreground">{client.companyName}</h1>
+          <div className="min-w-0">
+            <h1 className="text-2xl font-bold text-foreground truncate sm:text-3xl">{client.companyName}</h1>
             <p className="text-muted-foreground">Client Details</p>
           </div>
         </div>
-        <Button onClick={handleEdit} className="gap-2">
+        <Button onClick={handleEdit} className="gap-2 w-full sm:w-auto">
           <Pencil className="w-4 h-4" />
           Edit Client
         </Button>
@@ -152,9 +152,9 @@ const ClientDetail: React.FC = () => {
               <TableHeader>
                 <TableRow>
                   <TableHead>Name</TableHead>
-                  <TableHead>City</TableHead>
-                  <TableHead>Address</TableHead>
-                  <TableHead>Work Type</TableHead>
+                  <TableHead className="hidden md:table-cell">City</TableHead>
+                  <TableHead className="hidden lg:table-cell">Address</TableHead>
+                  <TableHead className="hidden sm:table-cell">Work Type</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Hours</TableHead>
                 </TableRow>
@@ -170,9 +170,9 @@ const ClientDetail: React.FC = () => {
                         {project.name}
                       </Link>
                     </TableCell>
-                    <TableCell>{project.city || '-'}</TableCell>
-                    <TableCell>{project.address || '-'}</TableCell>
-                    <TableCell>{project.workType}</TableCell>
+                    <TableCell className="hidden md:table-cell">{project.city || '-'}</TableCell>
+                    <TableCell className="hidden lg:table-cell">{project.address || '-'}</TableCell>
+                    <TableCell className="hidden sm:table-cell">{project.workType}</TableCell>
                     <TableCell>
                       <span
                         className={`px-2 py-1 rounded-full text-xs font-medium ${

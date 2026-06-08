@@ -80,13 +80,13 @@ const Dashboard: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-foreground">Dashboard</h1>
+          <h1 className="text-2xl font-bold text-foreground sm:text-3xl">Dashboard</h1>
           <p className="text-muted-foreground">Activity Overview</p>
         </div>
         <div className="flex items-center gap-2 px-4 py-2 bg-primary/10 rounded-lg border border-primary/20">
-          <Sparkles className="w-5 h-5 text-primary" />
+          <Sparkles className="w-5 h-5 shrink-0 text-primary" />
           <p className="text-sm font-medium text-primary">{getDailyQuote()}</p>
         </div>
       </div>

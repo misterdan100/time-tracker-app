@@ -91,17 +91,17 @@ const ProjectDetail: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={() => navigate('/projects')}>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-3 min-w-0">
+          <Button variant="ghost" size="icon" className="shrink-0" onClick={() => navigate('/projects')}>
             <ArrowLeft className="w-4 h-4" />
           </Button>
-          <div>
-            <h1 className="text-3xl font-bold text-foreground">{project.name}</h1>
+          <div className="min-w-0">
+            <h1 className="text-2xl font-bold text-foreground truncate sm:text-3xl">{project.name}</h1>
             <p className="text-muted-foreground">Project Details</p>
           </div>
         </div>
-        <Button onClick={handleEdit} className="gap-2">
+        <Button onClick={handleEdit} className="gap-2 w-full sm:w-auto">
           <Pencil className="w-4 h-4" />
           Edit Project
         </Button>

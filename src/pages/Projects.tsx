@@ -76,20 +76,20 @@ const Projects: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-foreground">Projects</h1>
+          <h1 className="text-2xl font-bold text-foreground sm:text-3xl">Projects</h1>
           <p className="text-muted-foreground">Manage your projects</p>
         </div>
-        <Button onClick={() => setDialogOpen(true)} className="gap-2">
+        <Button onClick={() => setDialogOpen(true)} className="gap-2 w-full sm:w-auto">
           <Plus className="w-4 h-4" />
           Add Project
         </Button>
       </div>
 
-      <div className="flex items-center gap-4">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
         <label className="text-sm font-medium">Filter by status:</label>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {statusOptions.map((status) => (
             <Button
               key={status}
@@ -108,11 +108,11 @@ const Projects: React.FC = () => {
           <TableHeader>
             <TableRow>
               <TableHead>Name</TableHead>
-              <TableHead>Client</TableHead>
-              <TableHead>City</TableHead>
-              <TableHead>Address</TableHead>
-              <TableHead>Work Type</TableHead>
-              <TableHead>Status</TableHead>
+              <TableHead className="hidden md:table-cell">Client</TableHead>
+              <TableHead className="hidden lg:table-cell">City</TableHead>
+              <TableHead className="hidden xl:table-cell">Address</TableHead>
+              <TableHead className="hidden lg:table-cell">Work Type</TableHead>
+              <TableHead className="hidden sm:table-cell">Status</TableHead>
               <TableHead>Hours</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
@@ -135,7 +135,7 @@ const Projects: React.FC = () => {
                       {project.name}
                     </Link>
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="hidden md:table-cell">
                     <Link
                       to={`/client/${project.clientId}`}
                       className="hover:underline text-primary"
@@ -143,10 +143,10 @@ const Projects: React.FC = () => {
                       {getClientName(project.clientId)}
                     </Link>
                   </TableCell>
-                  <TableCell>{project.city || '-'}</TableCell>
-                  <TableCell>{project.address || '-'}</TableCell>
-                  <TableCell>{project.workType}</TableCell>
-                  <TableCell>
+                  <TableCell className="hidden lg:table-cell">{project.city || '-'}</TableCell>
+                  <TableCell className="hidden xl:table-cell">{project.address || '-'}</TableCell>
+                  <TableCell className="hidden lg:table-cell">{project.workType}</TableCell>
+                  <TableCell className="hidden sm:table-cell">
                     <span
                       className={`px-2 py-1 rounded-full text-xs font-medium ${
                         project.status === 'Active'
