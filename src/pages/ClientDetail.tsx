@@ -11,13 +11,13 @@ import {
   TableRow,
 } from '../components/ui/table';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
-import { ArrowLeft, Building2, Mail, MapPin, Pencil } from 'lucide-react';
+import { ArrowLeft, Building2, MapPin, Pencil } from 'lucide-react';
 import ClientDialog from '../components/dialogs/ClientDialog';
 
 const ClientDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { clients, projects, timeEntries, updateClient, cities, addCity } = useApp();
+  const { clients, projects, timeEntries, updateClient } = useApp();
   const [dialogOpen, setDialogOpen] = useState(false);
 
   const client = clients.find((c) => c.id === id);

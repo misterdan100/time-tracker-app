@@ -45,7 +45,7 @@ const ProjectDetail: React.FC = () => {
     setTimeEntryDialogOpen(true);
   };
 
-  const handleSaveTimeEntry = (entry: Omit<TimeEntry, 'id'>) => {
+  const handleSaveTimeEntry = (_entry: Omit<TimeEntry, 'id'>) => {
     // No se usa aquí, solo para crear nuevos
   };
 

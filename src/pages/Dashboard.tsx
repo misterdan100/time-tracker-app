@@ -36,8 +36,6 @@ const Dashboard: React.FC = () => {
     })
     .reduce((sum, entry) => sum + entry.hours, 0);
 
-  const activeProjects = projects.filter((p) => p.status === 'Active').length;
-
   // Últimos 5 registros de tiempo
   const recentEntries = [...timeEntries]
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())

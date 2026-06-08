@@ -1,6 +1,6 @@
 import React, { useRef } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Users, Building2, Clock, Download, Upload, Plus, LogOut } from 'lucide-react';
+import { LayoutDashboard, Users, Building2, Download, Upload, Plus, LogOut } from 'lucide-react';
 import { Button } from '../ui/button';
 import { useApp } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
