@@ -26,8 +26,8 @@ import { enUS } from 'date-fns/locale';
 interface TimeEntryDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSave: (entry: Omit<TimeEntry, 'id'>) => void;
-  onUpdate?: (id: string, entry: Partial<TimeEntry>) => void;
+  onSave: (entry: Omit<TimeEntry, 'id'>) => void | Promise<void>;
+  onUpdate?: (id: string, entry: Partial<TimeEntry>) => void | Promise<void>;
   projects: Array<{ id: string; name: string; status: string }>;
   editEntry?: TimeEntry;
 }
@@ -66,17 +66,17 @@ const TimeEntryDialog: React.FC<TimeEntryDialogProps> = ({
     }
   }, [open, editEntry]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (formData.projectId && formData.hours) {
       if (editEntry && onUpdate) {
-        onUpdate(editEntry.id, {
+        await onUpdate(editEntry.id, {
           projectId: formData.projectId,
           date: formData.date,
           hours: parseFloat(formData.hours),
         });
       } else {
-        onSave({
+        await onSave({
           projectId: formData.projectId,
           date: formData.date,
           hours: parseFloat(formData.hours),

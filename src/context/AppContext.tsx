@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import { toast } from 'sonner';
 import { AppState, Client, Project, TimeEntry } from '../types';
 import { supabase } from '../lib/supabase';
 import { useAuth } from './AuthContext';
@@ -144,9 +145,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       .single();
     if (error) {
       console.error('Error adding client:', error.message);
+      toast.error('Could not save client', { description: error.message });
       return;
     }
     setClients((prev) => [...prev, rowToClient(data)]);
+    toast.success('Client saved');
   };
 
   const updateClient = async (id: string, updates: Partial<Client>) => {
@@ -158,15 +161,18 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       .single();
     if (error) {
       console.error('Error updating client:', error.message);
+      toast.error('Could not update client', { description: error.message });
       return;
     }
     setClients((prev) => prev.map((c) => (c.id === id ? rowToClient(data) : c)));
+    toast.success('Client updated');
   };
 
   const deleteClient = async (id: string) => {
     const { error } = await supabase.from('clients').delete().eq('id', id);
     if (error) {
       console.error('Error deleting client:', error.message);
+      toast.error('Could not delete client', { description: error.message });
       return;
     }
     // DB cascades projects + time entries; mirror that in local state.
@@ -174,6 +180,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setClients((prev) => prev.filter((c) => c.id !== id));
     setProjects((prev) => prev.filter((p) => p.clientId !== id));
     setTimeEntries((prev) => prev.filter((te) => !projectIds.includes(te.projectId)));
+    toast.success('Client deleted');
   };
 
   // ---------- projects ----------
@@ -188,6 +195,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       .single();
     if (error) {
       console.error('Error adding project:', error.message);
+      toast.error('Could not save project', { description: error.message });
       return;
     }
     const newProject = rowToProject(data);
@@ -195,6 +203,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (newProject.city && !cities.includes(newProject.city)) {
       setCities((prev) => [...prev, newProject.city]);
     }
+    toast.success('Project saved');
   };
 
   const updateProject = async (id: string, updates: Partial<Project>) => {
@@ -206,6 +215,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       .single();
     if (error) {
       console.error('Error updating project:', error.message);
+      toast.error('Could not update project', { description: error.message });
       return;
     }
     const updated = rowToProject(data);
@@ -213,16 +223,19 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (updated.city && !cities.includes(updated.city)) {
       setCities((prev) => [...prev, updated.city]);
     }
+    toast.success('Project updated');
   };
 
   const deleteProject = async (id: string) => {
     const { error } = await supabase.from('projects').delete().eq('id', id);
     if (error) {
       console.error('Error deleting project:', error.message);
+      toast.error('Could not delete project', { description: error.message });
       return;
     }
     setProjects((prev) => prev.filter((p) => p.id !== id));
     setTimeEntries((prev) => prev.filter((te) => te.projectId !== id));
+    toast.success('Project deleted');
   };
 
   // ---------- time entries ----------
@@ -235,9 +248,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       .single();
     if (error) {
       console.error('Error adding time entry:', error.message);
+      toast.error('Could not save time entry', { description: error.message });
       return;
     }
     setTimeEntries((prev) => [rowToTimeEntry(data), ...prev]);
+    toast.success('Time entry saved');
   };
 
   const updateTimeEntry = async (id: string, updates: Partial<TimeEntry>) => {
@@ -249,18 +264,22 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       .single();
     if (error) {
       console.error('Error updating time entry:', error.message);
+      toast.error('Could not update time entry', { description: error.message });
       return;
     }
     setTimeEntries((prev) => prev.map((te) => (te.id === id ? rowToTimeEntry(data) : te)));
+    toast.success('Time entry updated');
   };
 
   const deleteTimeEntry = async (id: string) => {
     const { error } = await supabase.from('time_entries').delete().eq('id', id);
     if (error) {
       console.error('Error deleting time entry:', error.message);
+      toast.error('Could not delete time entry', { description: error.message });
       return;
     }
     setTimeEntries((prev) => prev.filter((te) => te.id !== id));
+    toast.success('Time entry deleted');
   };
 
   // ---------- cities (local autocomplete helper) ----------
@@ -308,9 +327,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         if (error) throw error;
       }
       await fetchAll();
+      toast.success('Data imported');
     } catch (error) {
       console.error('Error importing data:', error);
-      alert('Error importing data. Check the file and try again.');
+      toast.error('Could not import data', {
+        description: error instanceof Error ? error.message : 'Check the file and try again.',
+      });
     }
   };
 

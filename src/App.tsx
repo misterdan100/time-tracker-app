@@ -10,6 +10,7 @@ import ProjectDetail from './pages/ProjectDetail';
 import ClientDetail from './pages/ClientDetail';
 import LoginPage from './pages/LoginPage';
 import TimeEntryDialog from './components/dialogs/TimeEntryDialog';
+import { Toaster } from 'sonner';
 
 function AppContent() {
   const { projects, addTimeEntry } = useApp();
@@ -57,6 +58,7 @@ function App() {
         <BrowserRouter>
           <AppContent />
         </BrowserRouter>
+        <Toaster richColors position="top-center" />
       </AppProvider>
     </AuthProvider>
   );
