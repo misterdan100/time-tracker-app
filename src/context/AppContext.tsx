@@ -233,9 +233,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       toast.error('Could not delete project', { description: error.message });
       return;
     }
+    const projectName = projects.find((p) => p.id === id)?.name ?? 'Project';
+    const removedEntries = timeEntries.filter((te) => te.projectId === id).length;
     setProjects((prev) => prev.filter((p) => p.id !== id));
     setTimeEntries((prev) => prev.filter((te) => te.projectId !== id));
-    toast.success('Project deleted');
+    toast.success(`"${projectName}" deleted`, {
+      description:
+        removedEntries > 0
+          ? `${removedEntries} time ${removedEntries === 1 ? 'entry' : 'entries'} also removed`
+          : 'No time entries to remove',
+    });
   };
 
   // ---------- time entries ----------

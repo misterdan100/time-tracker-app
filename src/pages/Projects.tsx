@@ -11,6 +11,14 @@ import {
   TableRow,
 } from '../components/ui/table';
 import ProjectDialog from '../components/dialogs/ProjectDialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '../components/ui/dialog';
 import { Project, ProjectStatus } from '../types';
 import { Plus, Pencil, Trash2 } from 'lucide-react';
 
@@ -19,6 +27,7 @@ const Projects: React.FC = () => {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editProject, setEditProject] = useState<Project | null>(null);
   const [statusFilter, setStatusFilter] = useState<ProjectStatus | 'All'>('All');
+  const [deleteTarget, setDeleteTarget] = useState<Project | null>(null);
 
   const filteredProjects = statusFilter === 'All'
     ? projects
@@ -38,16 +47,15 @@ const Projects: React.FC = () => {
     setDialogOpen(true);
   };
 
-  const handleDelete = (projectId: string) => {
-    const hasTimeEntries = timeEntries.some((te) => te.projectId === projectId);
-    if (hasTimeEntries) {
-      alert('You cannot delete this project because it has associated time entries.');
-      return;
-    }
-    if (confirm('Are you sure you want to delete this project?')) {
-      deleteProject(projectId);
-    }
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    await deleteProject(deleteTarget.id);
+    setDeleteTarget(null);
   };
+
+  const deleteEntryCount = deleteTarget
+    ? timeEntries.filter((te) => te.projectId === deleteTarget.id).length
+    : 0;
 
   const handleDialogClose = () => {
     setDialogOpen(false);
@@ -164,7 +172,7 @@ const Projects: React.FC = () => {
                       <Button
                         variant="ghost"
                         size="icon"
-                        onClick={() => handleDelete(project.id)}
+                        onClick={() => setDeleteTarget(project)}
                       >
                         <Trash2 className="w-4 h-4 text-destructive" />
                       </Button>
@@ -186,6 +194,37 @@ const Projects: React.FC = () => {
         cities={cities}
         onAddCity={addCity}
       />
+
+      <Dialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => {
+          if (!open) setDeleteTarget(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete project?</DialogTitle>
+            <DialogDescription>
+              This will permanently delete{' '}
+              <span className="font-semibold text-foreground">{deleteTarget?.name}</span>
+              {deleteEntryCount > 0
+                ? ` and its ${deleteEntryCount} time ${
+                    deleteEntryCount === 1 ? 'entry' : 'entries'
+                  }.`
+                : '.'}{' '}
+              This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteTarget(null)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={confirmDelete}>
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
