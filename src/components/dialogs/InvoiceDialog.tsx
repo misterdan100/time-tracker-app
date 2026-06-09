@@ -30,6 +30,7 @@ import {
   clientProjectsBreakdown,
   defaultCurrencyForCountry,
   formatCurrency,
+  formatInvoiceNumber,
   nextInvoiceNumberForClient,
   parseInvoiceNumber,
 } from '../../lib/invoiceUtils';
@@ -269,7 +270,9 @@ const InvoiceDialog: React.FC<InvoiceDialogProps> = ({
                   step="1"
                   value={invoiceNumber}
                   onChange={(e) => setInvoiceNumber(e.target.value)}
-                  placeholder={clientId ? `Suggested ${maxExisting + 1}` : 'Select a client first'}
+                  placeholder={
+                    clientId ? `Suggested ${formatInvoiceNumber(maxExisting + 1)}` : 'Select a client first'
+                  }
                   disabled={!clientId}
                   aria-invalid={numberBlocks || undefined}
                   className={
@@ -281,7 +284,8 @@ const InvoiceDialog: React.FC<InvoiceDialogProps> = ({
             {/* Number feedback (full width) */}
             {numberDuplicate ? (
               <p className="-mt-2 text-xs font-medium text-destructive">
-                #{enteredNum} already exists for this client. Pick a different number.
+                #{formatInvoiceNumber(enteredNum)} already exists for this client. Pick a different
+                number.
               </p>
             ) : numberInvalid && invoiceNumber.trim() !== '' ? (
               <p className="-mt-2 text-xs font-medium text-destructive">
@@ -289,12 +293,12 @@ const InvoiceDialog: React.FC<InvoiceDialogProps> = ({
               </p>
             ) : numberGap ? (
               <p className="-mt-2 text-xs font-medium text-amber-600 dark:text-amber-400">
-                Skipping ahead — the last invoice for this client was #{maxExisting}. You can still
-                use #{enteredNum}.
+                Skipping ahead — the last invoice for this client was{' '}
+                #{formatInvoiceNumber(maxExisting)}. You can still use #{formatInvoiceNumber(enteredNum)}.
               </p>
             ) : clientId ? (
               <p className="-mt-2 text-xs text-muted-foreground">
-                Per-client numbering. Suggested next: #{maxExisting + 1}.
+                Per-client numbering. Suggested next: #{formatInvoiceNumber(maxExisting + 1)}.
               </p>
             ) : null}
 

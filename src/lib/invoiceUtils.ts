@@ -214,3 +214,8 @@ export function nextInvoiceNumberForClient(clientId: string, invoices: Invoice[]
   const nums = clientInvoiceNumbers(clientId, invoices);
   return nums.length ? Math.max(...nums) + 1 : 1;
 }
+
+/** Display form of an invoice number: zero-padded to 3 digits (8 -> "008"). */
+export function formatInvoiceNumber(invoiceNumber: string | number): string {
+  return String(invoiceNumber).padStart(3, '0');
+}

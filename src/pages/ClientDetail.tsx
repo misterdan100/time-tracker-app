@@ -21,6 +21,7 @@ import {
   clientInvoices,
   computeUnbilled,
   formatCurrency,
+  formatInvoiceNumber,
   lastInvoicedPeriodEnd,
 } from '../lib/invoiceUtils';
 import { isProfileComplete } from '../lib/profileUtils';
@@ -277,7 +278,7 @@ const ClientDetail: React.FC = () => {
                         to={`/invoice/${invoice.id}`}
                         className="font-medium text-green-700 hover:text-green-800 hover:underline dark:text-green-400 dark:hover:text-green-300"
                       >
-                        #{invoice.invoiceNumber}
+                        #{formatInvoiceNumber(invoice.invoiceNumber)}
                       </Link>
                     </TableCell>
                     <TableCell className="hidden whitespace-nowrap md:table-cell">

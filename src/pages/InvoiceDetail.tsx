@@ -24,7 +24,7 @@ import StatCard from '../components/dashboard/StatCard';
 import InvoiceStatusBadge from '../components/invoice/InvoiceStatusBadge';
 import InvoiceDialog from '../components/dialogs/InvoiceDialog';
 import { downloadInvoice } from '../lib/downloadInvoice';
-import { formatCurrency } from '../lib/invoiceUtils';
+import { formatCurrency, formatInvoiceNumber } from '../lib/invoiceUtils';
 import {
   ArrowLeft,
   Clock,
@@ -117,7 +117,7 @@ const InvoiceDetail: React.FC = () => {
           <div className="min-w-0">
             <div className="flex items-center gap-3">
               <h1 className="truncate text-2xl font-bold text-foreground sm:text-3xl">
-                #{invoice.invoiceNumber}
+                #{formatInvoiceNumber(invoice.invoiceNumber)}
               </h1>
               <InvoiceStatusBadge status={invoice.status} />
             </div>
@@ -276,7 +276,7 @@ const InvoiceDetail: React.FC = () => {
             <DialogDescription>
               {confirm === 'finalize'
                 ? 'This locks the hours in this period so they cannot be billed on another invoice. It re-checks for any hours already billed elsewhere before finalizing.'
-                : `This will permanently delete #${invoice.invoiceNumber}.${
+                : `This will permanently delete #${formatInvoiceNumber(invoice.invoiceNumber)}.${
                     invoice.status !== 'draft'
                       ? ' Its hours will be released back to uninvoiced.'
                       : ''

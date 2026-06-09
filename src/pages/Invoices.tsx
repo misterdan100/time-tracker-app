@@ -23,7 +23,7 @@ import StatCard from '../components/dashboard/StatCard';
 import InvoiceStatusBadge from '../components/invoice/InvoiceStatusBadge';
 import InvoiceDialog from '../components/dialogs/InvoiceDialog';
 import { downloadInvoice } from '../lib/downloadInvoice';
-import { formatCurrency } from '../lib/invoiceUtils';
+import { formatCurrency, formatInvoiceNumber } from '../lib/invoiceUtils';
 import { isProfileComplete } from '../lib/profileUtils';
 import { Invoice, InvoiceStatus } from '../types';
 import {
@@ -204,7 +204,7 @@ const Invoices: React.FC = () => {
                       to={`/invoice/${invoice.id}`}
                       className="font-medium text-green-700 hover:text-green-800 hover:underline dark:text-green-400 dark:hover:text-green-300"
                     >
-                      #{invoice.invoiceNumber}
+                      #{formatInvoiceNumber(invoice.invoiceNumber)}
                     </Link>
                   </TableCell>
                   <TableCell className="hidden md:table-cell">
@@ -290,7 +290,10 @@ const Invoices: React.FC = () => {
             <DialogTitle>Delete invoice?</DialogTitle>
             <DialogDescription>
               This will permanently delete{' '}
-              <span className="font-semibold text-foreground">#{deleteTarget?.invoiceNumber}</span>.
+              <span className="font-semibold text-foreground">
+                #{deleteTarget ? formatInvoiceNumber(deleteTarget.invoiceNumber) : ''}
+              </span>
+              .
               {deleteTarget && deleteTarget.status !== 'draft'
                 ? ' Its hours will be released back to uninvoiced.'
                 : ''}{' '}
