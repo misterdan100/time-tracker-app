@@ -62,7 +62,7 @@ const Clients: React.FC = () => {
         </Button>
       </div>
 
-      <div className="border rounded-lg">
+      <div className="overflow-hidden rounded-2xl border border-border/60 bg-card shadow-soft">
         <Table>
           <TableHeader>
             <TableRow>
@@ -86,7 +86,7 @@ const Clients: React.FC = () => {
                   <TableCell className="font-medium">
                     <Link
                       to={`/client/${client.id}`}
-                      className="hover:underline text-primary"
+                      className="font-medium text-green-700 hover:text-green-800 hover:underline dark:text-green-400 dark:hover:text-green-300"
                     >
                       {client.companyName}
                     </Link>

@@ -4,48 +4,52 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    /* Canvas gris muy claro sobre el que flota toda la UI (#E9EDF2) */
+    --background: 214 27% 93%;
+    --foreground: 222 47% 11%; /* #111827 texto principal */
+    /* Superficies blancas: cards, sidebar, topbar */
     --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --card-foreground: 222 47% 11%;
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
+    --popover-foreground: 222 47% 11%;
+    /* Verde de marca (#22C55E): nav activo, botones primarios, chart */
+    --primary: 142 71% 45%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 214 27% 95%;
+    --secondary-foreground: 222 47% 11%;
+    --muted: 214 27% 95%;
+    --muted-foreground: 220 9% 46%; /* #6B7280 texto secundario */
+    --accent: 142 60% 95%; /* hover suave verdoso */
+    --accent-foreground: 142 71% 30%;
     --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
-    --radius: 0.5rem;
+    --destructive-foreground: 0 0% 100%;
+    --border: 214 20% 88%;
+    --input: 214 20% 88%;
+    --ring: 142 71% 45%;
+    --radius: 0.75rem;
   }
 
   .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 210 40% 98%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 212.7 26.8% 83.9%;
+    /* Tema dark: navy profundo (familia #000A29 / #101B3E del spec) */
+    --background: 226 65% 8%; /* canvas, el más oscuro */
+    --foreground: 220 30% 94%;
+    --card: 224 62% 15%; /* superficies: sidebar, cards, topbar */
+    --card-foreground: 220 30% 94%;
+    --popover: 224 62% 15%;
+    --popover-foreground: 220 30% 94%;
+    --primary: 142 71% 45%; /* verde de marca, igual que light */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 226 50% 20%;
+    --secondary-foreground: 220 30% 94%;
+    --muted: 226 50% 20%;
+    --muted-foreground: 222 20% 68%;
+    --accent: 226 50% 22%;
+    --accent-foreground: 220 30% 94%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 226 42% 23%;
+    --input: 226 42% 24%;
+    --ring: 142 71% 45%;
   }
 }
 
@@ -53,5 +57,9 @@
   body {
     background-color: hsl(var(--background));
     color: hsl(var(--foreground));
+    font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI',
+      Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 }

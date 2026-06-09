@@ -1,11 +1,34 @@
 export default {
+  darkMode: 'class',
   content: [
     "./index.html",
     "./src/**/*.{js,ts,jsx,tsx}",
   ],
   theme: {
     extend: {
+      fontFamily: {
+        sans: [
+          "Inter",
+          "ui-sans-serif",
+          "system-ui",
+          "-apple-system",
+          "Segoe UI",
+          "Roboto",
+          "Helvetica",
+          "Arial",
+          "sans-serif",
+        ],
+      },
       colors: {
+        // Colores de acento de marca (fijos, no dependen del tema light/dark)
+        brand: {
+          green: "#22C55E",
+          blue: "#4285F4",
+          orange: "#F79332",
+          "blue-soft": "#EEF5FF",
+          beige: "#F8F1E7",
+          "green-soft": "#DDF7E6",
+        },
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
         ring: "hsl(var(--ring))",
@@ -44,6 +67,11 @@ export default {
         lg: "var(--radius)",
         md: "calc(var(--radius) - 2px)",
         sm: "calc(var(--radius) - 4px)",
+        card: "20px",
+      },
+      boxShadow: {
+        soft: "0 10px 30px rgba(0,0,0,.06)",
+        float: "0 10px 30px rgba(0,0,0,.08)",
       },
     },
   },

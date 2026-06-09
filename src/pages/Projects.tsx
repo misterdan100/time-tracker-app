@@ -103,7 +103,7 @@ const Projects: React.FC = () => {
         </div>
       </div>
 
-      <div className="border rounded-lg">
+      <div className="overflow-hidden rounded-2xl border border-border/60 bg-card shadow-soft">
         <Table>
           <TableHeader>
             <TableRow>
@@ -130,7 +130,7 @@ const Projects: React.FC = () => {
                   <TableCell className="font-medium">
                     <Link
                       to={`/project/${project.id}`}
-                      className="hover:underline text-primary"
+                      className="font-medium text-green-700 hover:text-green-800 hover:underline dark:text-green-400 dark:hover:text-green-300"
                     >
                       {project.name}
                     </Link>
@@ -138,7 +138,7 @@ const Projects: React.FC = () => {
                   <TableCell className="hidden md:table-cell">
                     <Link
                       to={`/client/${project.clientId}`}
-                      className="hover:underline text-primary"
+                      className="font-medium text-green-700 hover:text-green-800 hover:underline dark:text-green-400 dark:hover:text-green-300"
                     >
                       {getClientName(project.clientId)}
                     </Link>
@@ -150,10 +150,10 @@ const Projects: React.FC = () => {
                     <span
                       className={`px-2 py-1 rounded-full text-xs font-medium ${
                         project.status === 'Active'
-                          ? 'bg-green-100 text-green-800'
+                          ? 'bg-green-100 text-green-800 dark:bg-green-500/15 dark:text-green-300'
                           : project.status === 'Paused'
-                          ? 'bg-yellow-100 text-yellow-800'
-                          : 'bg-gray-100 text-gray-800'
+                          ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-500/15 dark:text-yellow-300'
+                          : 'bg-gray-100 text-gray-800 dark:bg-white/10 dark:text-gray-300'
                       }`}
                     >
                       {project.status}

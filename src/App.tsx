@@ -3,7 +3,9 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { Menu } from 'lucide-react';
 import { AppProvider, useApp } from './context/AppContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { ThemeProvider, useTheme } from './context/ThemeContext';
 import Sidebar from './components/layout/Sidebar';
+import Logo from './components/Logo';
 import { Button } from './components/ui/button';
 import Dashboard from './pages/Dashboard';
 import Clients from './pages/Clients';
@@ -39,26 +41,29 @@ function AppContent() {
         open={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
       />
-      <div className="flex flex-1 flex-col overflow-hidden">
-        <header className="flex items-center gap-3 border-b border-border bg-card px-4 py-3 lg:hidden">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setSidebarOpen(true)}
-            aria-label="Open menu"
-          >
-            <Menu className="h-5 w-5" />
-          </Button>
-          <span className="font-bold text-foreground">Daniel Arq</span>
-        </header>
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6">
-          <Routes>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/clients" element={<Clients />} />
-            <Route path="/client/:id" element={<ClientDetail />} />
-            <Route path="/projects" element={<Projects />} />
-            <Route path="/project/:id" element={<ProjectDetail />} />
-          </Routes>
+      <div className="flex flex-1 flex-col overflow-hidden p-3 pl-0 max-lg:pl-3">
+        <main className="flex flex-1 flex-col gap-4 overflow-y-auto">
+          {/* Header solo en móvil para abrir el sidebar */}
+          <header className="flex items-center gap-3 rounded-2xl border border-border/60 bg-card px-3 py-2 shadow-soft lg:hidden">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setSidebarOpen(true)}
+              aria-label="Open menu"
+            >
+              <Menu className="h-5 w-5" />
+            </Button>
+            <Logo variant="full" className="h-7 w-auto" />
+          </header>
+          <div className="mx-auto w-full max-w-6xl flex-1 px-1 pb-6 pt-2 lg:pt-4">
+            <Routes>
+              <Route path="/" element={<Dashboard />} />
+              <Route path="/clients" element={<Clients />} />
+              <Route path="/client/:id" element={<ClientDetail />} />
+              <Route path="/projects" element={<Projects />} />
+              <Route path="/project/:id" element={<ProjectDetail />} />
+            </Routes>
+          </div>
         </main>
       </div>
       <TimeEntryDialog
@@ -71,16 +76,23 @@ function AppContent() {
   );
 }
 
+function ThemedToaster() {
+  const { theme } = useTheme();
+  return <Toaster richColors position="top-right" theme={theme} />;
+}
+
 function App() {
   return (
-    <AuthProvider>
-      <AppProvider>
-        <BrowserRouter>
-          <AppContent />
-        </BrowserRouter>
-        <Toaster richColors position="top-right" />
-      </AppProvider>
-    </AuthProvider>
+    <ThemeProvider>
+      <AuthProvider>
+        <AppProvider>
+          <BrowserRouter>
+            <AppContent />
+          </BrowserRouter>
+          <ThemedToaster />
+        </AppProvider>
+      </AuthProvider>
+    </ThemeProvider>
   );
 }
 

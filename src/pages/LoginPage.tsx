@@ -4,7 +4,7 @@ import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
-import { Clock } from 'lucide-react';
+import Logo from '../components/Logo';
 
 const LoginPage: React.FC = () => {
   const [email, setEmail] = useState('');
@@ -35,11 +35,9 @@ const LoginPage: React.FC = () => {
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
           <div className="flex justify-center mb-4">
-            <div className="p-3 bg-primary rounded-full">
-              <Clock className="w-8 h-8 text-primary-foreground" />
-            </div>
+            <Logo variant="full" className="h-12 w-auto" />
           </div>
-          <CardTitle className="text-2xl">Time Tracker</CardTitle>
+          <CardTitle className="text-2xl sr-only">Arq Time</CardTitle>
           <p className="text-muted-foreground">Sign in to access your account</p>
         </CardHeader>
         <CardContent>
