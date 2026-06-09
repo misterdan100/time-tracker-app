@@ -8,6 +8,8 @@ export interface Client {
   ownerName: string;
   country: Country;
   email: string;
+  defaultRate: number;
+  currency: string;
 }
 
 export interface Project {
@@ -26,6 +28,34 @@ export interface TimeEntry {
   projectId: string;
   date: string; // ISO format
   hours: number;
+  invoiceId?: string | null; // set when the entry is billed in a finalized invoice
+}
+
+export type InvoiceStatus = 'draft' | 'finalized' | 'paid';
+
+export interface InvoiceLineItem {
+  projectId: string;
+  projectName: string;
+  hours: number;
+  amount: number;
+}
+
+export interface Invoice {
+  id: string;
+  clientId: string;
+  invoiceNumber: string;
+  title: string;
+  periodStart: string; // ISO
+  periodEnd: string; // ISO
+  hourlyRate: number;
+  currency: string;
+  status: InvoiceStatus;
+  totalHours: number;
+  totalAmount: number;
+  lineItems: InvoiceLineItem[];
+  notes: string;
+  issuedAt?: string | null; // ISO, set on finalize
+  paidAt?: string | null; // ISO, set when marked paid
 }
 
 export interface AppState {
@@ -33,4 +63,5 @@ export interface AppState {
   projects: Project[];
   timeEntries: TimeEntry[];
   cities: string[];
+  invoices: Invoice[];
 }

@@ -4,6 +4,7 @@ import {
   LayoutDashboard,
   Users,
   Building2,
+  FileText,
   Download,
   Upload,
   Plus,
@@ -64,6 +65,7 @@ const Sidebar: React.FC<SidebarProps> = ({ onOpenTimeEntry, open, onClose }) => 
     { path: '/', label: 'Dashboard', icon: LayoutDashboard },
     { path: '/clients', label: 'Clients', icon: Users },
     { path: '/projects', label: 'Projects', icon: Building2 },
+    { path: '/invoices', label: 'Invoices', icon: FileText },
   ];
 
   return (

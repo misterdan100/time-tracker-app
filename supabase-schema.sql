@@ -96,3 +96,73 @@ create policy "time_entries_update_own" on public.time_entries
 drop policy if exists "time_entries_delete_own" on public.time_entries;
 create policy "time_entries_delete_own" on public.time_entries
   for delete using (auth.uid() = user_id);
+
+-- ============================================================
+-- INVOICES (added later — safe to re-run)
+-- ============================================================
+
+-- An invoice = client + date range + selected projects + hourly rate.
+-- line_items is an immutable snapshot used for the PDF/totals.
+-- time_entries.invoice_id links billed hours (set on finalize) so we can
+-- compute "uninvoiced hours" and prevent double-billing.
+
+-- ---------- TABLE ----------
+
+create table if not exists public.invoices (
+  id             uuid primary key default gen_random_uuid(),
+  user_id        uuid not null default auth.uid() references auth.users (id) on delete cascade,
+  client_id      uuid not null references public.clients (id) on delete cascade,
+  invoice_number text not null,
+  title          text not null default '',
+  period_start   text not null,
+  period_end     text not null,
+  hourly_rate    numeric not null default 0,
+  currency       text not null default 'COP',
+  status         text not null default 'draft',  -- draft | finalized | paid
+  total_hours    numeric not null default 0,
+  total_amount   numeric not null default 0,
+  line_items     jsonb not null default '[]'::jsonb,  -- [{projectId, projectName, hours, amount}]
+  notes          text not null default '',
+  issued_at      text,  -- ISO timestamp set when finalized
+  paid_at        text,  -- ISO timestamp set when marked paid
+  created_at     timestamptz not null default now()
+);
+
+-- ---------- LINK time_entries -> invoices ----------
+
+alter table public.time_entries
+  add column if not exists invoice_id uuid references public.invoices (id) on delete set null;
+
+-- ---------- CLIENT billing defaults ----------
+
+alter table public.clients
+  add column if not exists default_rate numeric not null default 0;
+alter table public.clients
+  add column if not exists currency text not null default 'COP';
+
+-- Make COP the default currency going forward (idempotent; existing rows keep their value).
+alter table public.clients  alter column currency set default 'COP';
+alter table public.invoices alter column currency set default 'COP';
+
+-- ---------- INDEXES ----------
+
+create index if not exists invoices_user_id_idx     on public.invoices (user_id);
+create index if not exists invoices_client_id_idx   on public.invoices (client_id);
+create index if not exists time_entries_invoice_idx on public.time_entries (invoice_id);
+
+-- ---------- ROW LEVEL SECURITY ----------
+
+alter table public.invoices enable row level security;
+
+drop policy if exists "invoices_select_own" on public.invoices;
+create policy "invoices_select_own" on public.invoices
+  for select using (auth.uid() = user_id);
+drop policy if exists "invoices_insert_own" on public.invoices;
+create policy "invoices_insert_own" on public.invoices
+  for insert with check (auth.uid() = user_id);
+drop policy if exists "invoices_update_own" on public.invoices;
+create policy "invoices_update_own" on public.invoices
+  for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
+drop policy if exists "invoices_delete_own" on public.invoices;
+create policy "invoices_delete_own" on public.invoices
+  for delete using (auth.uid() = user_id);

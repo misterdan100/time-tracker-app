@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
+import { toast } from 'sonner';
 import { useApp } from '../context/AppContext';
 import { Button } from '../components/ui/button';
 import {
@@ -11,19 +12,50 @@ import {
   TableRow,
 } from '../components/ui/table';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
-import { ArrowLeft, Building2, MapPin, Pencil } from 'lucide-react';
+import StatCard from '../components/dashboard/StatCard';
+import InvoiceStatusBadge from '../components/invoice/InvoiceStatusBadge';
+import InvoiceDialog from '../components/dialogs/InvoiceDialog';
 import ClientDialog from '../components/dialogs/ClientDialog';
+import { downloadInvoice } from '../lib/downloadInvoice';
+import {
+  clientInvoices,
+  computeUnbilled,
+  formatCurrency,
+  lastInvoicedPeriodEnd,
+} from '../lib/invoiceUtils';
+import { Invoice } from '../types';
+import {
+  ArrowLeft,
+  Building2,
+  Clock,
+  DollarSign,
+  Download,
+  Eye,
+  FileText,
+  MapPin,
+  Pencil,
+  Plus,
+} from 'lucide-react';
+import { format, parseISO } from 'date-fns';
+
+const fmt = (iso?: string | null) => {
+  if (!iso) return '—';
+  try {
+    return format(parseISO(iso), 'MMM d, yyyy');
+  } catch {
+    return '—';
+  }
+};
 
 const ClientDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { clients, projects, timeEntries, updateClient } = useApp();
+  const { clients, projects, timeEntries, invoices, updateClient } = useApp();
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [invoiceDialogOpen, setInvoiceDialogOpen] = useState(false);
 
   const client = clients.find((c) => c.id === id);
-  const clientProjects = client
-    ? projects.filter((p) => p.clientId === client.id)
-    : [];
+  const clientProjects = client ? projects.filter((p) => p.clientId === client.id) : [];
 
   const getProjectHours = (projectId: string) => {
     const projectEntries = timeEntries.filter((te) => te.projectId === projectId);
@@ -45,6 +77,15 @@ const ClientDetail: React.FC = () => {
     setDialogOpen(false);
   };
 
+  const handleDownload = async (invoice: Invoice) => {
+    try {
+      await downloadInvoice(invoice, client);
+    } catch (err) {
+      console.error('Error generating PDF:', err);
+      toast.error('Could not generate the PDF');
+    }
+  };
+
   if (!client) {
     return (
       <div className="space-y-6">
@@ -59,6 +100,11 @@ const ClientDetail: React.FC = () => {
     );
   }
 
+  const unbilled = computeUnbilled(client.id, { projects, timeEntries });
+  const unbilledAmount = unbilled.hours * (client.defaultRate || 0);
+  const lastEnd = lastInvoicedPeriodEnd(client.id, invoices);
+  const myInvoices = clientInvoices(client.id, invoices);
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -71,10 +117,16 @@ const ClientDetail: React.FC = () => {
             <p className="text-muted-foreground">Client Details</p>
           </div>
         </div>
-        <Button onClick={handleEdit} className="gap-2 w-full sm:w-auto">
-          <Pencil className="w-4 h-4" />
-          Edit Client
-        </Button>
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+          <Button onClick={() => setInvoiceDialogOpen(true)} className="w-full gap-2 sm:w-auto">
+            <Plus className="w-4 h-4" />
+            New Invoice
+          </Button>
+          <Button variant="outline" onClick={handleEdit} className="w-full gap-2 sm:w-auto">
+            <Pencil className="w-4 h-4" />
+            Edit Client
+          </Button>
+        </div>
       </div>
 
       <div className="grid gap-6 md:grid-cols-3">
@@ -112,6 +164,39 @@ const ClientDetail: React.FC = () => {
         </Card>
       </div>
 
+      {/* Billing overview */}
+      <div className="grid gap-4 sm:grid-cols-3">
+        <StatCard
+          label="Unbilled hours"
+          value={`${unbilled.hours.toFixed(2)}h`}
+          icon={Clock}
+          tint="orange"
+          hint={
+            unbilled.earliestDate
+              ? `${fmt(unbilled.earliestDate)} – ${fmt(unbilled.latestDate)}`
+              : undefined
+          }
+        />
+        <StatCard
+          label="Uninvoiced amount"
+          value={client.defaultRate ? formatCurrency(unbilledAmount, client.currency) : '—'}
+          icon={DollarSign}
+          tint="beige"
+          hint={
+            client.defaultRate
+              ? `@ ${formatCurrency(client.defaultRate, client.currency)}/h`
+              : 'Set a default rate'
+          }
+        />
+        <StatCard
+          label="Last invoice"
+          value={lastEnd ? fmt(lastEnd) : '—'}
+          icon={FileText}
+          tint="blue"
+          hint={lastEnd ? 'period end' : 'none yet'}
+        />
+      </div>
+
       <Card>
         <CardHeader>
           <CardTitle>Client Information</CardTitle>
@@ -134,7 +219,92 @@ const ClientDetail: React.FC = () => {
               <p className="text-sm font-medium text-muted-foreground">Country</p>
               <p className="text-base">{client.country}</p>
             </div>
+            <div>
+              <p className="text-sm font-medium text-muted-foreground">Default rate</p>
+              <p className="text-base">
+                {client.defaultRate
+                  ? `${formatCurrency(client.defaultRate, client.currency)} / h`
+                  : '—'}
+              </p>
+            </div>
+            <div>
+              <p className="text-sm font-medium text-muted-foreground">Currency</p>
+              <p className="text-base">{client.currency}</p>
+            </div>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Client invoices */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Invoices</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {myInvoices.length === 0 ? (
+            <p className="py-8 text-center text-muted-foreground">
+              No invoices generated for this client yet.
+            </p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Number</TableHead>
+                  <TableHead className="hidden md:table-cell">Period</TableHead>
+                  <TableHead className="hidden sm:table-cell">Hours</TableHead>
+                  <TableHead>Amount</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {myInvoices.map((invoice) => (
+                  <TableRow key={invoice.id}>
+                    <TableCell className="font-medium">
+                      <Link
+                        to={`/invoice/${invoice.id}`}
+                        className="font-medium text-green-700 hover:text-green-800 hover:underline dark:text-green-400 dark:hover:text-green-300"
+                      >
+                        #{invoice.invoiceNumber}
+                      </Link>
+                    </TableCell>
+                    <TableCell className="hidden whitespace-nowrap md:table-cell">
+                      {fmt(invoice.periodStart)} – {fmt(invoice.periodEnd)}
+                    </TableCell>
+                    <TableCell className="hidden sm:table-cell">
+                      {invoice.totalHours.toFixed(2)}h
+                    </TableCell>
+                    <TableCell className="font-medium">
+                      {formatCurrency(invoice.totalAmount, invoice.currency)}
+                    </TableCell>
+                    <TableCell>
+                      <InvoiceStatusBadge status={invoice.status} />
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex justify-end gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          title="View"
+                          onClick={() => navigate(`/invoice/${invoice.id}`)}
+                        >
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          title="Download PDF"
+                          onClick={() => handleDownload(invoice)}
+                        >
+                          <Download className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
         </CardContent>
       </Card>
 
@@ -200,6 +370,13 @@ const ClientDetail: React.FC = () => {
         onOpenChange={handleDialogClose}
         onSave={handleSave}
         editClient={client}
+      />
+
+      <InvoiceDialog
+        open={invoiceDialogOpen}
+        onOpenChange={setInvoiceDialogOpen}
+        lockedClientId={client.id}
+        onCreated={(invoice) => navigate(`/invoice/${invoice.id}`)}
       />
     </div>
   );

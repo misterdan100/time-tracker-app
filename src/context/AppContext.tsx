@@ -1,13 +1,15 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { toast } from 'sonner';
-import { AppState, Client, Project, TimeEntry } from '../types';
+import { AppState, Client, Invoice, Project, TimeEntry } from '../types';
 import { supabase } from '../lib/supabase';
+import { buildLineItems, getClientEntriesInRange, groupByProject } from '../lib/invoiceUtils';
 import { useAuth } from './AuthContext';
 
 interface AppContextType {
   clients: Client[];
   projects: Project[];
   timeEntries: TimeEntry[];
+  invoices: Invoice[];
   cities: string[];
   loading: boolean;
   addClient: (client: Omit<Client, 'id'>) => Promise<void>;
@@ -19,6 +21,11 @@ interface AppContextType {
   addTimeEntry: (entry: Omit<TimeEntry, 'id'>) => Promise<void>;
   updateTimeEntry: (id: string, entry: Partial<TimeEntry>) => Promise<void>;
   deleteTimeEntry: (id: string) => Promise<void>;
+  addInvoice: (invoice: Omit<Invoice, 'id'>) => Promise<Invoice | null>;
+  finalizeInvoice: (id: string) => Promise<void>;
+  markInvoicePaid: (id: string) => Promise<void>;
+  updateInvoice: (id: string, invoice: Partial<Invoice>) => Promise<void>;
+  deleteInvoice: (id: string) => Promise<void>;
   addCity: (city: string) => void;
   exportData: () => void;
   importData: (data: AppState) => Promise<void>;
@@ -44,6 +51,8 @@ const rowToClient = (r: any): Client => ({
   ownerName: r.owner_name,
   country: r.country,
   email: r.email,
+  defaultRate: Number(r.default_rate ?? 0),
+  currency: r.currency ?? 'USD',
 });
 
 const clientToRow = (c: Partial<Client>): Record<string, unknown> => {
@@ -52,6 +61,8 @@ const clientToRow = (c: Partial<Client>): Record<string, unknown> => {
   if (c.ownerName !== undefined) row.owner_name = c.ownerName;
   if (c.country !== undefined) row.country = c.country;
   if (c.email !== undefined) row.email = c.email;
+  if (c.defaultRate !== undefined) row.default_rate = c.defaultRate;
+  if (c.currency !== undefined) row.currency = c.currency;
   return row;
 };
 
@@ -83,6 +94,7 @@ const rowToTimeEntry = (r: any): TimeEntry => ({
   projectId: r.project_id,
   date: r.date,
   hours: Number(r.hours),
+  invoiceId: r.invoice_id ?? null,
 });
 
 const timeEntryToRow = (e: Partial<TimeEntry>): Record<string, unknown> => {
@@ -90,6 +102,44 @@ const timeEntryToRow = (e: Partial<TimeEntry>): Record<string, unknown> => {
   if (e.projectId !== undefined) row.project_id = e.projectId;
   if (e.date !== undefined) row.date = e.date;
   if (e.hours !== undefined) row.hours = e.hours;
+  if (e.invoiceId !== undefined) row.invoice_id = e.invoiceId;
+  return row;
+};
+
+const rowToInvoice = (r: any): Invoice => ({
+  id: r.id,
+  clientId: r.client_id,
+  invoiceNumber: r.invoice_number,
+  title: r.title ?? '',
+  periodStart: r.period_start,
+  periodEnd: r.period_end,
+  hourlyRate: Number(r.hourly_rate),
+  currency: r.currency ?? 'USD',
+  status: r.status,
+  totalHours: Number(r.total_hours),
+  totalAmount: Number(r.total_amount),
+  lineItems: Array.isArray(r.line_items) ? r.line_items : [],
+  notes: r.notes ?? '',
+  issuedAt: r.issued_at ?? null,
+  paidAt: r.paid_at ?? null,
+});
+
+const invoiceToRow = (i: Partial<Invoice>): Record<string, unknown> => {
+  const row: Record<string, unknown> = {};
+  if (i.clientId !== undefined) row.client_id = i.clientId;
+  if (i.invoiceNumber !== undefined) row.invoice_number = i.invoiceNumber;
+  if (i.title !== undefined) row.title = i.title;
+  if (i.periodStart !== undefined) row.period_start = i.periodStart;
+  if (i.periodEnd !== undefined) row.period_end = i.periodEnd;
+  if (i.hourlyRate !== undefined) row.hourly_rate = i.hourlyRate;
+  if (i.currency !== undefined) row.currency = i.currency;
+  if (i.status !== undefined) row.status = i.status;
+  if (i.totalHours !== undefined) row.total_hours = i.totalHours;
+  if (i.totalAmount !== undefined) row.total_amount = i.totalAmount;
+  if (i.lineItems !== undefined) row.line_items = i.lineItems;
+  if (i.notes !== undefined) row.notes = i.notes;
+  if (i.issuedAt !== undefined) row.issued_at = i.issuedAt;
+  if (i.paidAt !== undefined) row.paid_at = i.paidAt;
   return row;
 };
 
@@ -101,25 +151,29 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [clients, setClients] = useState<Client[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [timeEntries, setTimeEntries] = useState<TimeEntry[]>([]);
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [cities, setCities] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
-    const [clientsRes, projectsRes, entriesRes] = await Promise.all([
+    const [clientsRes, projectsRes, entriesRes, invoicesRes] = await Promise.all([
       supabase.from('clients').select('*').order('created_at', { ascending: true }),
       supabase.from('projects').select('*').order('created_at', { ascending: true }),
       supabase.from('time_entries').select('*').order('date', { ascending: false }),
+      supabase.from('invoices').select('*').order('created_at', { ascending: false }),
     ]);
 
     if (clientsRes.error) console.error('Error loading clients:', clientsRes.error.message);
     if (projectsRes.error) console.error('Error loading projects:', projectsRes.error.message);
     if (entriesRes.error) console.error('Error loading time entries:', entriesRes.error.message);
+    if (invoicesRes.error) console.error('Error loading invoices:', invoicesRes.error.message);
 
     const loadedProjects = (projectsRes.data ?? []).map(rowToProject);
     setClients((clientsRes.data ?? []).map(rowToClient));
     setProjects(loadedProjects);
     setTimeEntries((entriesRes.data ?? []).map(rowToTimeEntry));
+    setInvoices((invoicesRes.data ?? []).map(rowToInvoice));
     setCities(citiesFromProjects(loadedProjects));
     setLoading(false);
   }, []);
@@ -131,6 +185,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setClients([]);
       setProjects([]);
       setTimeEntries([]);
+      setInvoices([]);
       setCities([]);
     }
   }, [isAuthenticated, fetchAll]);
@@ -289,6 +344,131 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     toast.success('Time entry deleted');
   };
 
+  // ---------- invoices ----------
+
+  const addInvoice = async (invoice: Omit<Invoice, 'id'>): Promise<Invoice | null> => {
+    const { data, error } = await supabase
+      .from('invoices')
+      .insert(invoiceToRow(invoice))
+      .select()
+      .single();
+    if (error) {
+      console.error('Error adding invoice:', error.message);
+      toast.error('Could not save invoice', { description: error.message });
+      return null;
+    }
+    const created = rowToInvoice(data);
+    setInvoices((prev) => [created, ...prev]);
+    toast.success('Invoice saved');
+    return created;
+  };
+
+  const finalizeInvoice = async (id: string) => {
+    const invoice = invoices.find((i) => i.id === id);
+    if (!invoice || invoice.status !== 'draft') return;
+
+    // Re-resolve the still-unbilled entries for this client/period/projects so two
+    // overlapping drafts never bill the same hours twice.
+    const projectIds = invoice.lineItems.map((li) => li.projectId);
+    const entries = getClientEntriesInRange(
+      invoice.clientId,
+      invoice.periodStart,
+      invoice.periodEnd,
+      { projects, timeEntries },
+      { onlyUnbilled: true, projectIds }
+    );
+    if (entries.length === 0) {
+      toast.error('No unbilled hours left in this period', {
+        description: 'These hours may already be on another invoice.',
+      });
+      return;
+    }
+    const grouped = groupByProject(entries, projects);
+    const { lineItems, totalHours, totalAmount } = buildLineItems(grouped, invoice.hourlyRate);
+    const issuedAt = new Date().toISOString();
+
+    const { data, error } = await supabase
+      .from('invoices')
+      .update(
+        invoiceToRow({ status: 'finalized', issuedAt, lineItems, totalHours, totalAmount })
+      )
+      .eq('id', id)
+      .select()
+      .single();
+    if (error) {
+      console.error('Error finalizing invoice:', error.message);
+      toast.error('Could not finalize invoice', { description: error.message });
+      return;
+    }
+
+    const entryIds = entries.map((e) => e.id);
+    const { error: stampError } = await supabase
+      .from('time_entries')
+      .update({ invoice_id: id })
+      .in('id', entryIds);
+    if (stampError) {
+      console.error('Error locking hours:', stampError.message);
+      toast.error('Invoice finalized, but hours were not locked', {
+        description: stampError.message,
+      });
+    }
+
+    const stampedIds = new Set(entryIds);
+    setInvoices((prev) => prev.map((i) => (i.id === id ? rowToInvoice(data) : i)));
+    setTimeEntries((prev) =>
+      prev.map((te) => (stampedIds.has(te.id) ? { ...te, invoiceId: id } : te))
+    );
+    toast.success('Invoice finalized');
+  };
+
+  const markInvoicePaid = async (id: string) => {
+    const paidAt = new Date().toISOString();
+    const { data, error } = await supabase
+      .from('invoices')
+      .update(invoiceToRow({ status: 'paid', paidAt }))
+      .eq('id', id)
+      .select()
+      .single();
+    if (error) {
+      console.error('Error marking invoice paid:', error.message);
+      toast.error('Could not update invoice', { description: error.message });
+      return;
+    }
+    setInvoices((prev) => prev.map((i) => (i.id === id ? rowToInvoice(data) : i)));
+    toast.success('Invoice marked as paid');
+  };
+
+  const updateInvoice = async (id: string, updates: Partial<Invoice>) => {
+    const { data, error } = await supabase
+      .from('invoices')
+      .update(invoiceToRow(updates))
+      .eq('id', id)
+      .select()
+      .single();
+    if (error) {
+      console.error('Error updating invoice:', error.message);
+      toast.error('Could not update invoice', { description: error.message });
+      return;
+    }
+    setInvoices((prev) => prev.map((i) => (i.id === id ? rowToInvoice(data) : i)));
+    toast.success('Invoice updated');
+  };
+
+  const deleteInvoice = async (id: string) => {
+    const { error } = await supabase.from('invoices').delete().eq('id', id);
+    if (error) {
+      console.error('Error deleting invoice:', error.message);
+      toast.error('Could not delete invoice', { description: error.message });
+      return;
+    }
+    // DB sets time_entries.invoice_id to null (on delete set null); mirror locally.
+    setInvoices((prev) => prev.filter((i) => i.id !== id));
+    setTimeEntries((prev) =>
+      prev.map((te) => (te.invoiceId === id ? { ...te, invoiceId: null } : te))
+    );
+    toast.success('Invoice deleted');
+  };
+
   // ---------- cities (local autocomplete helper) ----------
 
   const addCity = (city: string) => {
@@ -300,7 +480,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // ---------- export / import ----------
 
   const exportData = () => {
-    const state: AppState = { clients, projects, timeEntries, cities };
+    const state: AppState = { clients, projects, timeEntries, cities, invoices };
     const dataStr = JSON.stringify(state, null, 2);
     const dataBlob = new Blob([dataStr], { type: 'application/json' });
     const url = URL.createObjectURL(dataBlob);
@@ -328,6 +508,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         const { error } = await supabase.from('projects').upsert(rows);
         if (error) throw error;
       }
+      // Invoices before time entries: time_entries.invoice_id references invoices.
+      if (data.invoices?.length) {
+        const rows = data.invoices.map((i) => ({ id: i.id, ...invoiceToRow(i) }));
+        const { error } = await supabase.from('invoices').upsert(rows);
+        if (error) throw error;
+      }
       if (data.timeEntries?.length) {
         const rows = data.timeEntries.map((e) => ({ id: e.id, ...timeEntryToRow(e) }));
         const { error } = await supabase.from('time_entries').upsert(rows);
@@ -349,6 +535,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         clients,
         projects,
         timeEntries,
+        invoices,
         cities,
         loading,
         addClient,
@@ -360,6 +547,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         addTimeEntry,
         updateTimeEntry,
         deleteTimeEntry,
+        addInvoice,
+        finalizeInvoice,
+        markInvoicePaid,
+        updateInvoice,
+        deleteInvoice,
         addCity,
         exportData,
         importData,
