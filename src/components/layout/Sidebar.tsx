@@ -5,6 +5,7 @@ import {
   Users,
   Building2,
   FileText,
+  UserCircle,
   Download,
   Upload,
   Plus,
@@ -194,6 +195,21 @@ const Sidebar: React.FC<SidebarProps> = ({ onOpenTimeEntry, open, onClose }) => 
 
         {/* Acciones inferiores */}
         <div className="space-y-1.5 border-t border-border/60 pt-4">
+          <Link
+            to="/profile"
+            onClick={onClose}
+            title={collapsed ? 'Profile' : undefined}
+            className={cn(
+              'flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium transition-colors',
+              collapsed && 'lg:justify-center lg:px-0',
+              location.pathname === '/profile'
+                ? 'bg-primary text-primary-foreground shadow-sm'
+                : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+            )}
+          >
+            <UserCircle className="h-5 w-5 shrink-0" />
+            <span className={cn(collapsed && 'lg:hidden')}>Profile</span>
+          </Link>
           <Button
             onClick={exportData}
             variant="ghost"

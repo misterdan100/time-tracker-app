@@ -1,7 +1,6 @@
 import { Document, Page, Text, View, StyleSheet, pdf } from '@react-pdf/renderer';
 import { format, parseISO } from 'date-fns';
-import { Client, Invoice } from '../../types';
-import { businessProfile } from '../../lib/invoiceConfig';
+import { Client, Invoice, Profile } from '../../types';
 import { formatCurrency } from '../../lib/invoiceUtils';
 
 // NOTE: react-pdf uses its own StyleSheet (not Tailwind). Keep the structure
@@ -83,7 +82,18 @@ const styles = StyleSheet.create({
     borderTopColor: '#111827',
   },
   grandText: { fontSize: 13, fontFamily: 'Helvetica-Bold', color: '#111827' },
-  notes: { marginTop: 30 },
+  paymentBox: {
+    marginTop: 26,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    borderRadius: 6,
+    backgroundColor: '#f9fafb',
+  },
+  paymentRow: { flexDirection: 'row', marginBottom: 2 },
+  paymentKey: { width: 110, color: '#6b7280' },
+  paymentVal: { color: '#111827' },
+  notes: { marginTop: 20 },
   notesText: { color: '#4b5563' },
   footer: {
     position: 'absolute',
@@ -108,20 +118,38 @@ function fmtDate(iso?: string | null): string {
 interface InvoicePdfProps {
   invoice: Invoice;
   client?: Client | null;
+  profile?: Profile | null;
 }
 
-export const InvoicePdf = ({ invoice, client }: InvoicePdfProps) => {
+export const InvoicePdf = ({ invoice, client, profile }: InvoicePdfProps) => {
   const currency = invoice.currency;
+  // Normalize issuer fields (profile is guaranteed complete by the create gate,
+  // but stay null-safe in case the PDF is generated for an older invoice).
+  const p = {
+    studioName: profile?.studioName ?? '',
+    tagline: profile?.tagline ?? '',
+    professionalName: profile?.professionalName ?? '',
+    address: profile?.address ?? '',
+    city: profile?.city ?? '',
+    country: profile?.country ?? '',
+    email: profile?.email ?? '',
+    phone: profile?.phone ?? '',
+    bankName: profile?.bankName ?? '',
+    bankAccount: profile?.bankAccount ?? '',
+    idType: profile?.idType ?? '',
+    idNumber: profile?.idNumber ?? '',
+  };
+  const cityCountry = [p.city, p.country].filter(Boolean).join(', ');
+  const idLine = [p.idType, p.idNumber].filter(Boolean).join(' ');
+
   return (
     <Document title={`${invoice.invoiceNumber}`}>
       <Page size="A4" style={styles.page}>
         {/* Header */}
         <View style={styles.headerRow}>
           <View>
-            <Text style={styles.brandName}>{businessProfile.name}</Text>
-            {businessProfile.tagline ? (
-              <Text style={styles.tagline}>{businessProfile.tagline}</Text>
-            ) : null}
+            <Text style={styles.brandName}>{p.studioName || 'Invoice'}</Text>
+            {p.tagline ? <Text style={styles.tagline}>{p.tagline}</Text> : null}
           </View>
           <View>
             <Text style={styles.invoiceTitle}>INVOICE</Text>
@@ -134,11 +162,13 @@ export const InvoicePdf = ({ invoice, client }: InvoicePdfProps) => {
         <View style={styles.partiesRow}>
           <View style={styles.party}>
             <Text style={styles.label}>From</Text>
-            <Text style={styles.strong}>{businessProfile.name}</Text>
-            {businessProfile.address ? <Text>{businessProfile.address}</Text> : null}
-            {businessProfile.email ? <Text>{businessProfile.email}</Text> : null}
-            {businessProfile.phone ? <Text>{businessProfile.phone}</Text> : null}
-            {businessProfile.taxId ? <Text>Tax ID: {businessProfile.taxId}</Text> : null}
+            {p.studioName ? <Text style={styles.strong}>{p.studioName}</Text> : null}
+            {p.professionalName ? <Text>{p.professionalName}</Text> : null}
+            {p.address ? <Text>{p.address}</Text> : null}
+            {cityCountry ? <Text>{cityCountry}</Text> : null}
+            {p.phone ? <Text>{p.phone}</Text> : null}
+            {p.email ? <Text>{p.email}</Text> : null}
+            {idLine ? <Text>{idLine}</Text> : null}
           </View>
           <View style={styles.party}>
             <Text style={styles.label}>Bill to</Text>
@@ -205,6 +235,31 @@ export const InvoicePdf = ({ invoice, client }: InvoicePdfProps) => {
           </View>
         </View>
 
+        {/* Payment details */}
+        {p.bankName || p.bankAccount || idLine ? (
+          <View style={styles.paymentBox}>
+            <Text style={[styles.label, { marginBottom: 6 }]}>Payment details</Text>
+            {p.bankName ? (
+              <View style={styles.paymentRow}>
+                <Text style={styles.paymentKey}>Bank</Text>
+                <Text style={styles.paymentVal}>{p.bankName}</Text>
+              </View>
+            ) : null}
+            {p.bankAccount ? (
+              <View style={styles.paymentRow}>
+                <Text style={styles.paymentKey}>Account no.</Text>
+                <Text style={styles.paymentVal}>{p.bankAccount}</Text>
+              </View>
+            ) : null}
+            {idLine ? (
+              <View style={styles.paymentRow}>
+                <Text style={styles.paymentKey}>ID</Text>
+                <Text style={styles.paymentVal}>{idLine}</Text>
+              </View>
+            ) : null}
+          </View>
+        ) : null}
+
         {/* Notes */}
         {invoice.notes ? (
           <View style={styles.notes}>
@@ -214,9 +269,7 @@ export const InvoicePdf = ({ invoice, client }: InvoicePdfProps) => {
         ) : null}
 
         <Text style={styles.footer} fixed>
-          {businessProfile.name}
-          {businessProfile.website ? ` · ${businessProfile.website}` : ''} · Thank you for your
-          business.
+          {p.studioName ? `${p.studioName} · ` : ''}Thank you for your business.
         </Text>
       </Page>
     </Document>
@@ -224,8 +277,12 @@ export const InvoicePdf = ({ invoice, client }: InvoicePdfProps) => {
 };
 
 /** Render the invoice to a PDF blob and trigger a browser download. */
-export async function downloadInvoicePdf(invoice: Invoice, client?: Client | null): Promise<void> {
-  const blob = await pdf(<InvoicePdf invoice={invoice} client={client} />).toBlob();
+export async function downloadInvoicePdf(
+  invoice: Invoice,
+  client?: Client | null,
+  profile?: Profile | null
+): Promise<void> {
+  const blob = await pdf(<InvoicePdf invoice={invoice} client={client} profile={profile} />).toBlob();
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;

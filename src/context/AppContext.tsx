@@ -1,8 +1,9 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { toast } from 'sonner';
-import { AppState, Client, Invoice, Project, TimeEntry } from '../types';
+import { AppState, Client, Invoice, Profile, Project, TimeEntry } from '../types';
 import { supabase } from '../lib/supabase';
 import { buildLineItems, getClientEntriesInRange, groupByProject } from '../lib/invoiceUtils';
+import { normalizeProfile } from '../lib/profileUtils';
 import { useAuth } from './AuthContext';
 
 interface AppContextType {
@@ -10,6 +11,7 @@ interface AppContextType {
   projects: Project[];
   timeEntries: TimeEntry[];
   invoices: Invoice[];
+  profile: Profile | null;
   cities: string[];
   loading: boolean;
   addClient: (client: Omit<Client, 'id'>) => Promise<void>;
@@ -26,6 +28,7 @@ interface AppContextType {
   markInvoicePaid: (id: string) => Promise<void>;
   updateInvoice: (id: string, invoice: Partial<Invoice>) => Promise<void>;
   deleteInvoice: (id: string) => Promise<void>;
+  saveProfile: (profile: Profile) => Promise<void>;
   addCity: (city: string) => void;
   exportData: () => void;
   importData: (data: AppState) => Promise<void>;
@@ -143,37 +146,71 @@ const invoiceToRow = (i: Partial<Invoice>): Record<string, unknown> => {
   return row;
 };
 
+const rowToProfile = (r: any): Profile => ({
+  studioName: r.studio_name ?? '',
+  tagline: r.tagline ?? '',
+  professionalName: r.professional_name ?? '',
+  address: r.address ?? '',
+  city: r.city ?? '',
+  country: r.country ?? '',
+  email: r.email ?? '',
+  bankAccount: r.bank_account ?? '',
+  bankName: r.bank_name ?? '',
+  idType: (r.id_type ?? 'C.C.') as Profile['idType'],
+  idNumber: r.id_number ?? '',
+  phone: r.phone ?? '',
+});
+
+const profileToRow = (p: Profile): Record<string, unknown> => ({
+  studio_name: p.studioName,
+  tagline: p.tagline,
+  professional_name: p.professionalName,
+  address: p.address,
+  city: p.city,
+  country: p.country,
+  email: p.email,
+  bank_account: p.bankAccount,
+  bank_name: p.bankName,
+  id_type: p.idType,
+  id_number: p.idNumber,
+  phone: p.phone,
+});
+
 const citiesFromProjects = (projects: Project[]): string[] =>
   Array.from(new Set(projects.map((p) => p.city).filter(Boolean)));
 
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, userId } = useAuth();
   const [clients, setClients] = useState<Client[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [timeEntries, setTimeEntries] = useState<TimeEntry[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [profile, setProfile] = useState<Profile | null>(null);
   const [cities, setCities] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
-    const [clientsRes, projectsRes, entriesRes, invoicesRes] = await Promise.all([
+    const [clientsRes, projectsRes, entriesRes, invoicesRes, profileRes] = await Promise.all([
       supabase.from('clients').select('*').order('created_at', { ascending: true }),
       supabase.from('projects').select('*').order('created_at', { ascending: true }),
       supabase.from('time_entries').select('*').order('date', { ascending: false }),
       supabase.from('invoices').select('*').order('created_at', { ascending: false }),
+      supabase.from('profiles').select('*').maybeSingle(),
     ]);
 
     if (clientsRes.error) console.error('Error loading clients:', clientsRes.error.message);
     if (projectsRes.error) console.error('Error loading projects:', projectsRes.error.message);
     if (entriesRes.error) console.error('Error loading time entries:', entriesRes.error.message);
     if (invoicesRes.error) console.error('Error loading invoices:', invoicesRes.error.message);
+    if (profileRes.error) console.error('Error loading profile:', profileRes.error.message);
 
     const loadedProjects = (projectsRes.data ?? []).map(rowToProject);
     setClients((clientsRes.data ?? []).map(rowToClient));
     setProjects(loadedProjects);
     setTimeEntries((entriesRes.data ?? []).map(rowToTimeEntry));
     setInvoices((invoicesRes.data ?? []).map(rowToInvoice));
+    setProfile(profileRes.data ? rowToProfile(profileRes.data) : null);
     setCities(citiesFromProjects(loadedProjects));
     setLoading(false);
   }, []);
@@ -186,6 +223,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setProjects([]);
       setTimeEntries([]);
       setInvoices([]);
+      setProfile(null);
       setCities([]);
     }
   }, [isAuthenticated, fetchAll]);
@@ -469,6 +507,28 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     toast.success('Invoice deleted');
   };
 
+  // ---------- profile ----------
+
+  const saveProfile = async (next: Profile) => {
+    if (!userId) return;
+    const { data, error } = await supabase
+      .from('profiles')
+      .upsert({
+        ...profileToRow(normalizeProfile(next)),
+        user_id: userId,
+        updated_at: new Date().toISOString(),
+      })
+      .select()
+      .single();
+    if (error) {
+      console.error('Error saving profile:', error.message);
+      toast.error('Could not save profile', { description: error.message });
+      return;
+    }
+    setProfile(rowToProfile(data));
+    toast.success('Profile saved');
+  };
+
   // ---------- cities (local autocomplete helper) ----------
 
   const addCity = (city: string) => {
@@ -536,6 +596,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         projects,
         timeEntries,
         invoices,
+        profile,
         cities,
         loading,
         addClient,
@@ -552,6 +613,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         markInvoicePaid,
         updateInvoice,
         deleteInvoice,
+        saveProfile,
         addCity,
         exportData,
         importData,

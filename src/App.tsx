@@ -14,6 +14,7 @@ import ProjectDetail from './pages/ProjectDetail';
 import ClientDetail from './pages/ClientDetail';
 import Invoices from './pages/Invoices';
 import InvoiceDetail from './pages/InvoiceDetail';
+import Profile from './pages/Profile';
 import LoginPage from './pages/LoginPage';
 import TimeEntryDialog from './components/dialogs/TimeEntryDialog';
 import { Toaster } from 'sonner';
@@ -66,6 +67,7 @@ function AppContent() {
               <Route path="/project/:id" element={<ProjectDetail />} />
               <Route path="/invoices" element={<Invoices />} />
               <Route path="/invoice/:id" element={<InvoiceDetail />} />
+              <Route path="/profile" element={<Profile />} />
             </Routes>
           </div>
         </main>

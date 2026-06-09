@@ -166,3 +166,44 @@ create policy "invoices_update_own" on public.invoices
 drop policy if exists "invoices_delete_own" on public.invoices;
 create policy "invoices_delete_own" on public.invoices
   for delete using (auth.uid() = user_id);
+
+-- ============================================================
+-- PROFILES (issuer/studio details per user — added later)
+-- ============================================================
+
+-- One row per user (user_id is the PK). Holds the data printed as the
+-- "From"/payment block on invoices. Fields default to '' so a profile can
+-- exist partially filled; the app gates invoice creation on completeness.
+
+create table if not exists public.profiles (
+  user_id           uuid primary key default auth.uid() references auth.users (id) on delete cascade,
+  studio_name       text not null default '',
+  tagline           text not null default '',
+  professional_name text not null default '',
+  address           text not null default '',
+  city              text not null default '',
+  country           text not null default 'Colombia',
+  email             text not null default '',
+  bank_account      text not null default '',
+  bank_name         text not null default '',
+  id_type           text not null default 'C.C.',  -- C.C. | NIT | ID
+  id_number         text not null default '',
+  phone             text not null default '',
+  created_at        timestamptz not null default now(),
+  updated_at        timestamptz not null default now()
+);
+
+alter table public.profiles enable row level security;
+
+drop policy if exists "profiles_select_own" on public.profiles;
+create policy "profiles_select_own" on public.profiles
+  for select using (auth.uid() = user_id);
+drop policy if exists "profiles_insert_own" on public.profiles;
+create policy "profiles_insert_own" on public.profiles
+  for insert with check (auth.uid() = user_id);
+drop policy if exists "profiles_update_own" on public.profiles;
+create policy "profiles_update_own" on public.profiles
+  for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
+drop policy if exists "profiles_delete_own" on public.profiles;
+create policy "profiles_delete_own" on public.profiles
+  for delete using (auth.uid() = user_id);

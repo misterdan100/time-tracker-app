@@ -23,6 +23,7 @@ import {
   formatCurrency,
   lastInvoicedPeriodEnd,
 } from '../lib/invoiceUtils';
+import { isProfileComplete } from '../lib/profileUtils';
 import { Invoice } from '../types';
 import {
   ArrowLeft,
@@ -50,7 +51,7 @@ const fmt = (iso?: string | null) => {
 const ClientDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { clients, projects, timeEntries, invoices, updateClient } = useApp();
+  const { clients, projects, timeEntries, invoices, profile, updateClient } = useApp();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [invoiceDialogOpen, setInvoiceDialogOpen] = useState(false);
 
@@ -79,11 +80,22 @@ const ClientDetail: React.FC = () => {
 
   const handleDownload = async (invoice: Invoice) => {
     try {
-      await downloadInvoice(invoice, client);
+      await downloadInvoice(invoice, client, profile);
     } catch (err) {
       console.error('Error generating PDF:', err);
       toast.error('Could not generate the PDF');
     }
+  };
+
+  const handleNewInvoice = () => {
+    if (!isProfileComplete(profile)) {
+      toast.error('Complete your studio profile to create invoices', {
+        description: 'Add your studio and payment details first.',
+      });
+      navigate('/profile');
+      return;
+    }
+    setInvoiceDialogOpen(true);
   };
 
   if (!client) {
@@ -118,7 +130,7 @@ const ClientDetail: React.FC = () => {
           </div>
         </div>
         <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
-          <Button onClick={() => setInvoiceDialogOpen(true)} className="w-full gap-2 sm:w-auto">
+          <Button onClick={handleNewInvoice} className="w-full gap-2 sm:w-auto">
             <Plus className="w-4 h-4" />
             New Invoice
           </Button>

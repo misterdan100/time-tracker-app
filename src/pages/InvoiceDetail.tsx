@@ -49,7 +49,7 @@ const fmt = (iso?: string | null) => {
 const InvoiceDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { invoices, clients, finalizeInvoice, markInvoicePaid, deleteInvoice } = useApp();
+  const { invoices, clients, profile, finalizeInvoice, markInvoicePaid, deleteInvoice } = useApp();
   const [confirm, setConfirm] = useState<null | 'finalize' | 'delete'>(null);
   const [editOpen, setEditOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -73,7 +73,7 @@ const InvoiceDetail: React.FC = () => {
 
   const handleDownload = async () => {
     try {
-      await downloadInvoice(invoice, client);
+      await downloadInvoice(invoice, client, profile);
     } catch (err) {
       console.error('Error generating PDF:', err);
       toast.error('Could not generate the PDF');

@@ -58,6 +58,24 @@ export interface Invoice {
   paidAt?: string | null; // ISO, set when marked paid
 }
 
+export type IdType = 'C.C.' | 'NIT' | 'ID';
+
+/** The invoice issuer (studio/professional) details, one per user. */
+export interface Profile {
+  studioName: string;
+  tagline: string;
+  professionalName: string;
+  address: string;
+  city: string;
+  country: string;
+  email: string;
+  bankAccount: string;
+  bankName: string;
+  idType: IdType;
+  idNumber: string;
+  phone: string;
+}
+
 export interface AppState {
   clients: Client[];
   projects: Project[];

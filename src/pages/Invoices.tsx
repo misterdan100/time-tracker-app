@@ -24,8 +24,19 @@ import InvoiceStatusBadge from '../components/invoice/InvoiceStatusBadge';
 import InvoiceDialog from '../components/dialogs/InvoiceDialog';
 import { downloadInvoice } from '../lib/downloadInvoice';
 import { formatCurrency } from '../lib/invoiceUtils';
+import { isProfileComplete } from '../lib/profileUtils';
 import { Invoice, InvoiceStatus } from '../types';
-import { FileText, Clock, FileEdit, Plus, Download, Trash2, Eye, Pencil } from 'lucide-react';
+import {
+  FileText,
+  Clock,
+  FileEdit,
+  Plus,
+  Download,
+  Trash2,
+  Eye,
+  Pencil,
+  AlertTriangle,
+} from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 
 const fmt = (iso: string) => {
@@ -37,14 +48,22 @@ const fmt = (iso: string) => {
 };
 
 const Invoices: React.FC = () => {
-  const { invoices, clients, deleteInvoice } = useApp();
+  const { invoices, clients, profile, deleteInvoice } = useApp();
   const navigate = useNavigate();
+  const profileComplete = isProfileComplete(profile);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<Invoice | null>(null);
   const [statusFilter, setStatusFilter] = useState<InvoiceStatus | 'All'>('All');
   const [deleteTarget, setDeleteTarget] = useState<Invoice | null>(null);
 
   const openNew = () => {
+    if (!profileComplete) {
+      toast.error('Complete your studio profile to create invoices', {
+        description: 'Add your studio and payment details first.',
+      });
+      navigate('/profile');
+      return;
+    }
     setEditTarget(null);
     setDialogOpen(true);
   };
@@ -75,7 +94,7 @@ const Invoices: React.FC = () => {
 
   const handleDownload = async (invoice: Invoice) => {
     try {
-      await downloadInvoice(invoice, clients.find((c) => c.id === invoice.clientId));
+      await downloadInvoice(invoice, clients.find((c) => c.id === invoice.clientId), profile);
     } catch (err) {
       console.error('Error generating PDF:', err);
       toast.error('Could not generate the PDF');
@@ -102,6 +121,23 @@ const Invoices: React.FC = () => {
           New Invoice
         </Button>
       </div>
+
+      {!profileComplete && (
+        <div className="flex flex-col gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300 sm:flex-row sm:items-center sm:justify-between">
+          <span className="flex items-center gap-2">
+            <AlertTriangle className="h-4 w-4 shrink-0" />
+            Complete your studio profile to start creating invoices.
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full sm:w-auto"
+            onClick={() => navigate('/profile')}
+          >
+            Go to profile
+          </Button>
+        </div>
+      )}
 
       <div className="grid gap-4 sm:grid-cols-3">
         <StatCard label="Total invoices" value={invoices.length} icon={FileText} tint="blue" />
