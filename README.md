@@ -25,14 +25,35 @@ A time tracking application for managing clients, projects, and time entries. Bu
 
 ## Authentication
 
-The application uses environment variables for authentication credentials. For local development, create a `.env` file in the root directory:
+Authentication is handled by **Supabase Auth** (email + password). For local development, create a `.env` file in the root directory:
 
 ```env
-VITE_USERNAME=your_username
-VITE_PASSWORD=your_password
+VITE_SUPABASE_URL=https://<project-ref>.supabase.co
+VITE_SUPABASE_ANON_KEY=your_anon_key
 ```
 
 **Note:** The `.env` file is included in `.gitignore` and will not be committed to the repository.
+
+### Password recovery
+
+The login screen has a **Forgot password?** link. It sends a Supabase recovery email whose link
+returns to `/reset-password`, where the user picks a new password. No external service is required:
+Supabase's built-in email sender is enough.
+
+Required setup in the Supabase dashboard (**Authentication → URL Configuration**):
+
+- **Site URL**: `https://time-tracker-app-sandy.vercel.app`
+- **Redirect URLs**: add both
+  - `https://time-tracker-app-sandy.vercel.app/reset-password`
+  - `http://localhost:5173/reset-password`
+
+If a recovery link is not allow-listed Supabase falls back to the Site URL; the app detects the
+recovery fragment and forwards it to `/reset-password` anyway, so the flow still works.
+
+**Email limits:** the built-in sender is rate limited (~2 emails/hour) and intended for testing. If
+messages stop arriving, plug in a free SMTP provider under **Authentication → Emails → SMTP
+Settings** (e.g. Brevo, 300 emails/day free, or Resend, 3.000/month free) — both have free tiers,
+no card required.
 
 ## Local Development
 
@@ -85,8 +106,8 @@ npm run preview
 3. **Configure Environment Variables in Vercel:**
    - After importing the project, go to "Settings" > "Environment Variables"
    - Add the following variables:
-     - `VITE_USERNAME`: your username
-     - `VITE_PASSWORD`: your password
+     - `VITE_SUPABASE_URL`: your Supabase project URL
+     - `VITE_SUPABASE_ANON_KEY`: your Supabase anon key
    - Click "Save" and redeploy the project
 
 4. **Configuration:**

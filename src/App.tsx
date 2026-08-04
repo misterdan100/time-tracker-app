@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
 import { Menu } from 'lucide-react';
 import { AppProvider, useApp } from './context/AppContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -16,12 +16,21 @@ import Invoices from './pages/Invoices';
 import InvoiceDetail from './pages/InvoiceDetail';
 import Profile from './pages/Profile';
 import LoginPage from './pages/LoginPage';
+import ForgotPasswordPage from './pages/ForgotPasswordPage';
+import ResetPasswordPage from './pages/ResetPasswordPage';
 import TimeEntryDialog from './components/dialogs/TimeEntryDialog';
 import { Toaster } from 'sonner';
+
+/**
+ * Rendered outside the app shell. /reset-password also takes over when a session
+ * exists, since the recovery link signs the user in before they pick a password.
+ */
+const AUTH_ROUTES = ['/forgot-password', '/reset-password'];
 
 function AppContent() {
   const { projects, addTimeEntry } = useApp();
   const { isAuthenticated, loading } = useAuth();
+  const { pathname } = useLocation();
   const [timeEntryOpen, setTimeEntryOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
@@ -33,8 +42,14 @@ function AppContent() {
     );
   }
 
-  if (!isAuthenticated) {
-    return <LoginPage />;
+  if (!isAuthenticated || AUTH_ROUTES.includes(pathname)) {
+    return (
+      <Routes>
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="/reset-password" element={<ResetPasswordPage />} />
+        <Route path="*" element={<LoginPage />} />
+      </Routes>
+    );
   }
 
   return (

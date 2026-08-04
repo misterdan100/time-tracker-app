@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
-import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
-import Logo from '../components/Logo';
+import { PasswordInput } from '../components/ui/password-input';
+import AuthCard from '../components/auth/AuthCard';
 
 const LoginPage: React.FC = () => {
   const [email, setEmail] = useState('');
@@ -31,51 +32,49 @@ const LoginPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background">
-      <Card className="w-full max-w-md">
-        <CardHeader className="text-center">
-          <div className="flex justify-center mb-4">
-            <Logo variant="full" className="h-12 w-auto" />
+    <AuthCard title="Arq Time" subtitle="Sign in to access your account">
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="space-y-2">
+          <Label htmlFor="email">Email</Label>
+          <Input
+            id="email"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="Enter your email"
+            autoComplete="email"
+            required
+          />
+        </div>
+        <div className="space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <Label htmlFor="password">Password</Label>
+            <Link
+              to="/forgot-password"
+              className="text-sm font-medium text-primary underline-offset-4 hover:underline"
+            >
+              Forgot password?
+            </Link>
           </div>
-          <CardTitle className="text-2xl sr-only">Arq Time</CardTitle>
-          <p className="text-muted-foreground">Sign in to access your account</p>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
-              <Input
-                id="email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="Enter your email"
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
-              <Input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Enter your password"
-                required
-              />
-            </div>
-            {error && (
-              <div className="text-sm text-destructive bg-destructive/10 p-3 rounded-md">
-                {error}
-              </div>
-            )}
-            <Button type="submit" className="w-full" disabled={submitting}>
-              {submitting ? 'Signing in...' : 'Sign In'}
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
-    </div>
+          <PasswordInput
+            id="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="Enter your password"
+            autoComplete="current-password"
+            required
+          />
+        </div>
+        {error && (
+          <div className="text-sm text-destructive bg-destructive/10 p-3 rounded-md">
+            {error}
+          </div>
+        )}
+        <Button type="submit" className="w-full" disabled={submitting}>
+          {submitting ? 'Signing in...' : 'Sign In'}
+        </Button>
+      </form>
+    </AuthCard>
   );
 };
 

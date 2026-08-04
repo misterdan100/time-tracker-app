@@ -9,6 +9,10 @@ interface AuthContextType {
   userEmail: string | null;
   login: (email: string, password: string) => Promise<{ error: string | null }>;
   logout: () => Promise<void>;
+  /** Sends the "reset your password" email with a link back to /reset-password. */
+  requestPasswordReset: (email: string) => Promise<{ error: string | null }>;
+  /** Sets a new password for the current session (recovery link or logged-in user). */
+  updatePassword: (password: string) => Promise<{ error: string | null }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -47,6 +51,24 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     await supabase.auth.signOut();
   };
 
+  const requestPasswordReset = async (email: string): Promise<{ error: string | null }> => {
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/reset-password`,
+    });
+    if (error) {
+      return { error: error.message };
+    }
+    return { error: null };
+  };
+
+  const updatePassword = async (password: string): Promise<{ error: string | null }> => {
+    const { error } = await supabase.auth.updateUser({ password });
+    if (error) {
+      return { error: error.message };
+    }
+    return { error: null };
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -56,6 +78,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         userEmail: session?.user.email ?? null,
         login,
         logout,
+        requestPasswordReset,
+        updatePassword,
       }}
     >
       {children}
