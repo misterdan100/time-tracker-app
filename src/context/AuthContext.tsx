@@ -17,6 +17,15 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+/**
+ * Where recovery links must land: always the deployed app, even when the reset
+ * is requested from a dev server, so the emailed link works from any device.
+ * Override with VITE_SITE_URL (e.g. http://localhost:5173 to test locally).
+ */
+const SITE_URL = (
+  (import.meta.env.VITE_SITE_URL as string | undefined) || 'https://time-tracker-app-sandy.vercel.app'
+).replace(/\/$/, '');
+
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
@@ -53,7 +62,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const requestPasswordReset = async (email: string): Promise<{ error: string | null }> => {
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/reset-password`,
+      redirectTo: `${SITE_URL}/reset-password`,
     });
     if (error) {
       return { error: error.message };

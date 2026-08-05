@@ -40,12 +40,19 @@ The login screen has a **Forgot password?** link. It sends a Supabase recovery e
 returns to `/reset-password`, where the user picks a new password. No external service is required:
 Supabase's built-in email sender is enough.
 
+The emailed link **always points at the deployed app**, even when the reset is requested from a dev
+server, so it can be opened from any device. To point it somewhere else — testing the reset screen
+locally, for instance — set `VITE_SITE_URL` in `.env`:
+
+```env
+VITE_SITE_URL=http://localhost:5173
+```
+
 Required setup in the Supabase dashboard (**Authentication → URL Configuration**):
 
 - **Site URL**: `https://time-tracker-app-sandy.vercel.app`
-- **Redirect URLs**: add both
-  - `https://time-tracker-app-sandy.vercel.app/reset-password`
-  - `http://localhost:5173/reset-password`
+- **Redirect URLs**: `https://time-tracker-app-sandy.vercel.app/reset-password`
+  (add `http://localhost:5173/reset-password` too if you use `VITE_SITE_URL` for local testing)
 
 If a recovery link is not allow-listed Supabase falls back to the Site URL; the app detects the
 recovery fragment and forwards it to `/reset-password` anyway, so the flow still works.
