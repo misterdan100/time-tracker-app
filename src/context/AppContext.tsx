@@ -143,6 +143,7 @@ const rowToInvoice = (r: any): Invoice => ({
   totalAmount: Number(r.total_amount),
   lineItems: Array.isArray(r.line_items) ? r.line_items : [],
   notes: r.notes ?? '',
+  createdAt: r.created_at ?? null,
   issuedAt: r.issued_at ?? null,
   paidAt: r.paid_at ?? null,
 });

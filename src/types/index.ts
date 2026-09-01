@@ -56,6 +56,7 @@ export interface Invoice {
   totalAmount: number;
   lineItems: InvoiceLineItem[];
   notes: string;
+  createdAt?: string | null; // ISO, read-only (set by the database on insert)
   issuedAt?: string | null; // ISO, set on finalize
   paidAt?: string | null; // ISO, set when marked paid
 }

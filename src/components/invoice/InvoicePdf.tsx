@@ -20,12 +20,13 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     marginBottom: 28,
   },
+  // Grays are kept mid-dark (>= #6b7280) so they survive low-quality printers.
   brandName: { fontSize: 18, fontFamily: 'Helvetica-Bold', color: '#111827' },
-  tagline: { fontSize: 9, color: '#6b7280', marginTop: 6 },
+  tagline: { fontSize: 9, color: '#4b5563', marginTop: 6 },
   invoiceTitle: {
     fontSize: 24,
     fontFamily: 'Helvetica-Bold',
-    color: '#cbd5e1',
+    color: '#6b7280',
     textAlign: 'right',
   },
   invoiceNumber: { fontSize: 11, color: '#374151', textAlign: 'right', marginTop: 10 },
@@ -45,7 +46,7 @@ const styles = StyleSheet.create({
   party: { width: '48%' },
   label: {
     fontSize: 8,
-    color: '#9ca3af',
+    color: '#6b7280',
     fontFamily: 'Helvetica-Bold',
     textTransform: 'uppercase',
     letterSpacing: 1,
@@ -90,20 +91,54 @@ const styles = StyleSheet.create({
     backgroundColor: '#f9fafb',
   },
   paymentRow: { flexDirection: 'row', marginBottom: 2 },
-  paymentKey: { width: 110, color: '#6b7280' },
+  paymentKey: { width: 110, color: '#4b5563' },
   paymentVal: { color: '#111827' },
   notes: { marginTop: 20 },
-  notesText: { color: '#4b5563' },
+  notesText: { color: '#374151' },
   footer: {
     position: 'absolute',
     bottom: 28,
     left: 44,
     right: 44,
-    textAlign: 'center',
-    fontSize: 8,
-    color: '#9ca3af',
+    alignItems: 'center',
   },
+  footerDate: { fontSize: 8, color: '#4b5563', marginBottom: 3 },
+  footerText: { fontSize: 8, color: '#6b7280', textAlign: 'center' },
 });
+
+/**
+ * The invoice's own date: when it was created (DB timestamp), falling back to
+ * the issue date and finally to "now" for rows that predate the created_at mapping.
+ */
+export function invoiceDate(invoice: Invoice): Date {
+  for (const iso of [invoice.createdAt, invoice.issuedAt]) {
+    if (!iso) continue;
+    const d = parseISO(iso);
+    if (!Number.isNaN(d.getTime())) return d;
+  }
+  return new Date();
+}
+
+/** Strip characters that are illegal in file names; keep spaces and case. */
+function safeFilePart(value: string, fallback: string): string {
+  const cleaned = value.replace(/[\\/:*?"<>|]+/g, '').replace(/\s+/g, ' ').trim();
+  return cleaned || fallback;
+}
+
+/** `[number]-[client]-[professional name]-[yyyy-MM-dd].pdf`, e.g. 011-EZpermitsTX-Daniel Caceres-2026-09-01.pdf */
+export function invoiceFileName(
+  invoice: Invoice,
+  client?: Client | null,
+  profile?: Profile | null
+): string {
+  const parts = [
+    formatInvoiceNumber(invoice.invoiceNumber),
+    safeFilePart(client?.companyName ?? '', 'client'),
+    safeFilePart(profile?.professionalName ?? '', 'invoice'),
+    format(invoiceDate(invoice), 'yyyy-MM-dd'),
+  ];
+  return `${parts.join('-')}.pdf`;
+}
 
 function fmtDate(iso?: string | null): string {
   if (!iso) return '—';
@@ -253,9 +288,12 @@ export const InvoicePdf = ({ invoice, client, profile }: InvoicePdfProps) => {
           </View>
         ) : null}
 
-        <Text style={styles.footer} fixed>
-          {p.studioName ? `${p.studioName} · ` : ''}Thank you for your business.
-        </Text>
+        <View style={styles.footer} fixed>
+          <Text style={styles.footerDate}>Invoice date: {format(invoiceDate(invoice), 'MMM d, yyyy')}</Text>
+          <Text style={styles.footerText}>
+            {p.studioName ? `${p.studioName} · ` : ''}Thank you for your business.
+          </Text>
+        </View>
       </Page>
     </Document>
   );
@@ -271,8 +309,7 @@ export async function downloadInvoicePdf(
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
-  const safeClient = (client?.companyName ?? 'client').replace(/[^a-z0-9]+/gi, '-').toLowerCase();
-  link.download = `${formatInvoiceNumber(invoice.invoiceNumber)}-${safeClient}.pdf`;
+  link.download = invoiceFileName(invoice, client, profile);
   link.click();
   URL.revokeObjectURL(url);
 }
