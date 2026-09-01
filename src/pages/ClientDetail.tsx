@@ -28,6 +28,8 @@ import { isProfileComplete } from '../lib/profileUtils';
 import { Invoice, InvoiceStatus, Project } from '../types';
 import { SortableHead } from '../components/ui/sortable-head';
 import { dateSortValue, SortAccessors, useSort } from '../lib/sort';
+import { workTypesLabel } from '../lib/workTypes';
+import WorkTypeTags from '../components/project/WorkTypeTags';
 import {
   ArrowLeft,
   Building2,
@@ -93,7 +95,7 @@ const ClientDetail: React.FC = () => {
       name: (p) => p.name,
       city: (p) => p.city,
       address: (p) => p.address,
-      workType: (p) => p.workType,
+      workType: (p) => workTypesLabel(p.workTypes),
       status: (p) => p.status,
       hours: (p) => hoursByProject.get(p.id) ?? 0,
     }),
@@ -425,7 +427,7 @@ const ClientDetail: React.FC = () => {
                     onSort={toggleProjectSort}
                     className="hidden sm:table-cell"
                   >
-                    Work Type
+                    Work Types
                   </SortableHead>
                   <SortableHead sortKey="status" sort={projectSort} onSort={toggleProjectSort}>
                     Status
@@ -448,7 +450,9 @@ const ClientDetail: React.FC = () => {
                     </TableCell>
                     <TableCell className="hidden md:table-cell">{project.city || '-'}</TableCell>
                     <TableCell className="hidden lg:table-cell">{project.address || '-'}</TableCell>
-                    <TableCell className="hidden sm:table-cell">{project.workType}</TableCell>
+                    <TableCell className="hidden sm:table-cell">
+                      <WorkTypeTags types={project.workTypes} />
+                    </TableCell>
                     <TableCell>
                       <span
                         className={`px-2 py-1 rounded-full text-xs font-medium ${

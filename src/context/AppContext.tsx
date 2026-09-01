@@ -4,6 +4,7 @@ import { AppState, Client, Invoice, Profile, Project, TimeEntry } from '../types
 import { supabase } from '../lib/supabase';
 import { buildLineItems, getClientEntriesInRange, groupByProject } from '../lib/invoiceUtils';
 import { normalizeProfile } from '../lib/profileUtils';
+import { normalizeWorkTypes } from '../lib/workTypes';
 import { useAuth } from './AuthContext';
 
 interface AppContextType {
@@ -75,7 +76,10 @@ const rowToProject = (r: any): Project => ({
   address: r.address,
   city: r.city,
   clientId: r.client_id,
-  workType: r.work_type,
+  // Prefer the tag array; fall back to the legacy single work_type column.
+  workTypes: normalizeWorkTypes(
+    Array.isArray(r.work_types) && r.work_types.length > 0 ? r.work_types : r.work_type
+  ),
   status: r.status,
   color: r.color,
   createdAt: r.created_at ?? undefined,
@@ -87,7 +91,12 @@ const projectToRow = (p: Partial<Project>): Record<string, unknown> => {
   if (p.address !== undefined) row.address = p.address;
   if (p.city !== undefined) row.city = p.city;
   if (p.clientId !== undefined) row.client_id = p.clientId;
-  if (p.workType !== undefined) row.work_type = p.workType;
+  if (p.workTypes !== undefined) {
+    const tags = normalizeWorkTypes(p.workTypes);
+    row.work_types = tags;
+    // Keep the legacy column populated (first tag) so older readers still see a value.
+    row.work_type = tags[0] ?? 'Other';
+  }
   if (p.status !== undefined) row.status = p.status;
   if (p.color !== undefined) row.color = p.color;
   return row;
@@ -561,11 +570,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         if (error) throw error;
       }
       if (data.projects?.length) {
-        const rows = data.projects.map((p) => ({
-          id: p.id,
-          ...projectToRow(p),
-          color: p.color || generateRandomColor(),
-        }));
+        const rows = data.projects.map((p) => {
+          // Older backups carry a single `workType` string instead of `workTypes`.
+          const legacy = (p as unknown as { workType?: unknown }).workType;
+          const workTypes = normalizeWorkTypes(p.workTypes ?? legacy);
+          return {
+            id: p.id,
+            ...projectToRow({ ...p, workTypes }),
+            color: p.color || generateRandomColor(),
+          };
+        });
         const { error } = await supabase.from('projects').upsert(rows);
         if (error) throw error;
       }

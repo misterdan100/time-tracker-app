@@ -19,6 +19,7 @@ import TimeEntryDialog from '../components/dialogs/TimeEntryDialog';
 import { TimeEntry } from '../types';
 import { SortableHead } from '../components/ui/sortable-head';
 import { dateSortValue, SortAccessors, useSort } from '../lib/sort';
+import WorkTypeTags from '../components/project/WorkTypeTags';
 
 type EntrySortKey = 'date' | 'hours';
 
@@ -152,7 +153,8 @@ const ProjectDetail: React.FC = () => {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{project.status}</div>
-            <p className="text-xs text-muted-foreground">{project.workType}</p>
+            <WorkTypeTags types={project.workTypes} className="mt-1" />
+
           </CardContent>
         </Card>
       </div>
@@ -172,8 +174,8 @@ const ProjectDetail: React.FC = () => {
               <p className="text-base">{project.address || 'Not specified'}</p>
             </div>
             <div>
-              <p className="text-sm font-medium text-muted-foreground">Work Type</p>
-              <p className="text-base">{project.workType}</p>
+              <p className="text-sm font-medium text-muted-foreground">Work Types</p>
+              <WorkTypeTags types={project.workTypes} className="mt-1" />
             </div>
             <div>
               <p className="text-sm font-medium text-muted-foreground">Client Email</p>

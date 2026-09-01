@@ -207,3 +207,20 @@ create policy "profiles_update_own" on public.profiles
 drop policy if exists "profiles_delete_own" on public.profiles;
 create policy "profiles_delete_own" on public.profiles
   for delete using (auth.uid() = user_id);
+
+-- ============================================================
+-- PROJECT WORK-TYPE TAGS (added later — safe to re-run)
+-- ============================================================
+-- A project can have several work types at once (e.g. Blueprints + 3D Modeling).
+-- `work_types` (text[]) is the source of truth from now on. The legacy `work_type`
+-- column is kept and still written (first tag) so nothing that reads it breaks;
+-- existing rows are backfilled from it exactly once.
+
+alter table public.projects
+  add column if not exists work_types text[] not null default '{}';
+
+update public.projects
+   set work_types = array[work_type]
+ where work_types = '{}'
+   and work_type is not null
+   and work_type <> '';

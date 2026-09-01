@@ -30,6 +30,8 @@ import {
 import { Project, ProjectStatus } from '../types';
 import { Plus, Pencil, Trash2 } from 'lucide-react';
 import { dateSortValue, SortAccessors, useSort } from '../lib/sort';
+import { workTypesLabel } from '../lib/workTypes';
+import WorkTypeTags from '../components/project/WorkTypeTags';
 
 type ProjectSortKey = 'name' | 'client' | 'city' | 'address' | 'workType' | 'status' | 'hours' | 'created';
 
@@ -73,7 +75,7 @@ const Projects: React.FC = () => {
       client: (p) => getClientName(p.clientId),
       city: (p) => p.city,
       address: (p) => p.address,
-      workType: (p) => p.workType,
+      workType: (p) => workTypesLabel(p.workTypes),
       status: (p) => p.status,
       hours: (p) => getProjectHours(p.id),
       created: (p) => dateSortValue(p.createdAt) ?? indexById.get(p.id) ?? 0,
@@ -183,7 +185,7 @@ const Projects: React.FC = () => {
                 Address
               </SortableHead>
               <SortableHead sortKey="workType" sort={sort} onSort={toggle} className="hidden lg:table-cell">
-                Work Type
+                Work Types
               </SortableHead>
               <SortableHead sortKey="status" sort={sort} onSort={toggle} className="hidden sm:table-cell">
                 Status
@@ -222,7 +224,9 @@ const Projects: React.FC = () => {
                   </TableCell>
                   <TableCell className="hidden lg:table-cell">{project.city || '-'}</TableCell>
                   <TableCell className="hidden xl:table-cell">{project.address || '-'}</TableCell>
-                  <TableCell className="hidden lg:table-cell">{project.workType}</TableCell>
+                  <TableCell className="hidden lg:table-cell">
+                    <WorkTypeTags types={project.workTypes} />
+                  </TableCell>
                   <TableCell className="hidden sm:table-cell">
                     <span
                       className={`px-2 py-1 rounded-full text-xs font-medium ${

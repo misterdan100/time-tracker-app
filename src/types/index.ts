@@ -18,7 +18,8 @@ export interface Project {
   address: string;
   city: string;
   clientId: string;
-  workType: WorkType;
+  /** One or more work-type tags (a project can be Blueprints and 3D Modeling at once). */
+  workTypes: WorkType[];
   status: ProjectStatus;
   color: string;
   createdAt?: string; // ISO, read-only (set by the database on insert)
