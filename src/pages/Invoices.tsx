@@ -19,6 +19,15 @@ import {
   DialogDescription,
   DialogFooter,
 } from '../components/ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../components/ui/select';
+import { SortableHead } from '../components/ui/sortable-head';
+import { dateSortValue, SortAccessors, useSort } from '../lib/sort';
 import StatCard from '../components/dashboard/StatCard';
 import InvoiceStatusBadge from '../components/invoice/InvoiceStatusBadge';
 import InvoiceDialog from '../components/dialogs/InvoiceDialog';
@@ -47,6 +56,11 @@ const fmt = (iso: string) => {
   }
 };
 
+type InvoiceSortKey = 'number' | 'client' | 'period' | 'hours' | 'amount' | 'status';
+
+const ALL_CLIENTS = 'all';
+const STATUS_RANK: Record<InvoiceStatus, number> = { draft: 0, finalized: 1, paid: 2 };
+
 const Invoices: React.FC = () => {
   const { invoices, clients, profile, deleteInvoice } = useApp();
   const navigate = useNavigate();
@@ -54,6 +68,7 @@ const Invoices: React.FC = () => {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<Invoice | null>(null);
   const [statusFilter, setStatusFilter] = useState<InvoiceStatus | 'All'>('All');
+  const [clientFilter, setClientFilter] = useState<string>(ALL_CLIENTS);
   const [deleteTarget, setDeleteTarget] = useState<Invoice | null>(null);
 
   const openNew = () => {
@@ -79,8 +94,28 @@ const Invoices: React.FC = () => {
   const getClientName = (clientId: string) =>
     clients.find((c) => c.id === clientId)?.companyName ?? 'Unknown client';
 
-  const filtered =
-    statusFilter === 'All' ? invoices : invoices.filter((i) => i.status === statusFilter);
+  const filtered = useMemo(
+    () =>
+      invoices.filter(
+        (i) =>
+          (statusFilter === 'All' || i.status === statusFilter) &&
+          (clientFilter === ALL_CLIENTS || i.clientId === clientFilter)
+      ),
+    [invoices, statusFilter, clientFilter]
+  );
+
+  const accessors = useMemo<SortAccessors<Invoice, InvoiceSortKey>>(
+    () => ({
+      number: (i) => parseInt((i.invoiceNumber ?? '').replace(/\D/g, ''), 10) || 0,
+      client: (i) => clients.find((c) => c.id === i.clientId)?.companyName ?? '',
+      period: (i) => dateSortValue(i.periodEnd),
+      hours: (i) => i.totalHours,
+      amount: (i) => i.totalAmount,
+      status: (i) => STATUS_RANK[i.status] ?? 0,
+    }),
+    [clients]
+  );
+  const { sort, toggle, sorted } = useSort(filtered, accessors, { key: 'period', dir: 'desc' });
 
   const draftCount = invoices.filter((i) => i.status === 'draft').length;
   const outstanding = invoices.filter((i) => i.status === 'finalized');
@@ -157,20 +192,40 @@ const Invoices: React.FC = () => {
         <StatCard label="Drafts" value={draftCount} icon={FileEdit} tint="beige" />
       </div>
 
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
-        <label className="text-sm font-medium">Filter by status:</label>
-        <div className="flex flex-wrap gap-2">
-          {statusOptions.map((status) => (
-            <Button
-              key={status}
-              variant={statusFilter === status ? 'default' : 'outline'}
-              size="sm"
-              className="capitalize"
-              onClick={() => setStatusFilter(status)}
-            >
-              {status}
-            </Button>
-          ))}
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
+          <label className="text-sm font-medium">Filter by status:</label>
+          <div className="flex flex-wrap gap-2">
+            {statusOptions.map((status) => (
+              <Button
+                key={status}
+                variant={statusFilter === status ? 'default' : 'outline'}
+                size="sm"
+                className="capitalize"
+                onClick={() => setStatusFilter(status)}
+              >
+                {status}
+              </Button>
+            ))}
+          </div>
+        </div>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
+          <label htmlFor="invoice-client-filter" className="text-sm font-medium">
+            Client:
+          </label>
+          <Select value={clientFilter} onValueChange={setClientFilter}>
+            <SelectTrigger id="invoice-client-filter" className="w-full sm:w-56">
+              <SelectValue placeholder="All clients" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL_CLIENTS}>All clients</SelectItem>
+              {clients.map((c) => (
+                <SelectItem key={c.id} value={c.id}>
+                  {c.companyName}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
       </div>
 
@@ -178,26 +233,38 @@ const Invoices: React.FC = () => {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Number</TableHead>
-              <TableHead className="hidden md:table-cell">Client</TableHead>
-              <TableHead className="hidden lg:table-cell">Period</TableHead>
-              <TableHead className="hidden sm:table-cell">Hours</TableHead>
-              <TableHead>Amount</TableHead>
-              <TableHead>Status</TableHead>
+              <SortableHead sortKey="number" sort={sort} onSort={toggle}>
+                Number
+              </SortableHead>
+              <SortableHead sortKey="client" sort={sort} onSort={toggle} className="hidden md:table-cell">
+                Client
+              </SortableHead>
+              <SortableHead sortKey="period" sort={sort} onSort={toggle} className="hidden lg:table-cell">
+                Period
+              </SortableHead>
+              <SortableHead sortKey="hours" sort={sort} onSort={toggle} className="hidden sm:table-cell">
+                Hours
+              </SortableHead>
+              <SortableHead sortKey="amount" sort={sort} onSort={toggle}>
+                Amount
+              </SortableHead>
+              <SortableHead sortKey="status" sort={sort} onSort={toggle}>
+                Status
+              </SortableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filtered.length === 0 ? (
+            {sorted.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
                   {invoices.length === 0
                     ? 'No invoices yet. Create your first one.'
-                    : 'No invoices match this filter.'}
+                    : 'No invoices match these filters.'}
                 </TableCell>
               </TableRow>
             ) : (
-              filtered.map((invoice) => (
+              sorted.map((invoice) => (
                 <TableRow key={invoice.id}>
                   <TableCell className="font-medium">
                     <Link

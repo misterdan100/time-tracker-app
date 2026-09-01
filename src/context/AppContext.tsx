@@ -78,6 +78,7 @@ const rowToProject = (r: any): Project => ({
   workType: r.work_type,
   status: r.status,
   color: r.color,
+  createdAt: r.created_at ?? undefined,
 });
 
 const projectToRow = (p: Partial<Project>): Record<string, unknown> => {

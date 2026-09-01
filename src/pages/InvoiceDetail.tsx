@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { useApp } from '../context/AppContext';
@@ -36,6 +36,19 @@ import {
   Trash2,
 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
+import { SortableHead } from '../components/ui/sortable-head';
+import { SortAccessors, useSort } from '../lib/sort';
+import { InvoiceLineItem } from '../types';
+
+type LineSortKey = 'project' | 'hours' | 'amount';
+
+const lineAccessors: SortAccessors<InvoiceLineItem, LineSortKey> = {
+  project: (li) => li.projectName,
+  hours: (li) => li.hours,
+  amount: (li) => li.amount,
+};
+
+const NO_LINES: InvoiceLineItem[] = [];
 
 const fmt = (iso?: string | null) => {
   if (!iso) return '—';
@@ -56,6 +69,14 @@ const InvoiceDetail: React.FC = () => {
 
   const invoice = invoices.find((i) => i.id === id);
   const client = invoice ? clients.find((c) => c.id === invoice.clientId) : undefined;
+
+  // Hooks stay above the early return below.
+  const lineItems = useMemo(() => invoice?.lineItems ?? NO_LINES, [invoice]);
+  const {
+    sort: lineSort,
+    toggle: toggleLineSort,
+    sorted: sortedLines,
+  } = useSort(lineItems, lineAccessors, { key: 'project', dir: 'asc' });
 
   if (!invoice) {
     return (
@@ -231,14 +252,20 @@ const InvoiceDetail: React.FC = () => {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Project</TableHead>
-                  <TableHead className="text-right">Hours</TableHead>
+                  <SortableHead sortKey="project" sort={lineSort} onSort={toggleLineSort}>
+                    Project
+                  </SortableHead>
+                  <SortableHead sortKey="hours" sort={lineSort} onSort={toggleLineSort} align="right">
+                    Hours
+                  </SortableHead>
                   <TableHead className="hidden text-right sm:table-cell">Rate</TableHead>
-                  <TableHead className="text-right">Amount</TableHead>
+                  <SortableHead sortKey="amount" sort={lineSort} onSort={toggleLineSort} align="right">
+                    Amount
+                  </SortableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {invoice.lineItems.map((li) => (
+                {sortedLines.map((li) => (
                   <TableRow key={li.projectId}>
                     <TableCell className="font-medium">{li.projectName}</TableCell>
                     <TableCell className="text-right">{li.hours.toFixed(2)}h</TableCell>

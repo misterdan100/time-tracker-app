@@ -21,6 +21,7 @@ export interface Project {
   workType: WorkType;
   status: ProjectStatus;
   color: string;
+  createdAt?: string; // ISO, read-only (set by the database on insert)
 }
 
 export interface TimeEntry {

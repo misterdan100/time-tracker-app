@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { Button } from '../components/ui/button';
@@ -17,6 +17,15 @@ import { enUS } from 'date-fns/locale';
 import ProjectDialog from '../components/dialogs/ProjectDialog';
 import TimeEntryDialog from '../components/dialogs/TimeEntryDialog';
 import { TimeEntry } from '../types';
+import { SortableHead } from '../components/ui/sortable-head';
+import { dateSortValue, SortAccessors, useSort } from '../lib/sort';
+
+type EntrySortKey = 'date' | 'hours';
+
+const entryAccessors: SortAccessors<TimeEntry, EntrySortKey> = {
+  date: (e) => dateSortValue(e.date),
+  hours: (e) => e.hours,
+};
 
 const ProjectDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -28,9 +37,15 @@ const ProjectDetail: React.FC = () => {
 
   const project = projects.find((p) => p.id === id);
   const client = project ? clients.find((c) => c.id === project.clientId) : null;
-  const projectTimeEntries = project
-    ? timeEntries.filter((te) => te.projectId === project.id)
-    : [];
+  const projectTimeEntries = useMemo(
+    () => (project ? timeEntries.filter((te) => te.projectId === project.id) : []),
+    [project, timeEntries]
+  );
+  const {
+    sort: entrySort,
+    toggle: toggleEntrySort,
+    sorted: sortedEntries,
+  } = useSort(projectTimeEntries, entryAccessors, { key: 'date', dir: 'desc' });
 
   const totalHours = projectTimeEntries.reduce((sum, entry) => sum + entry.hours, 0);
 
@@ -185,15 +200,17 @@ const ProjectDetail: React.FC = () => {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Hours</TableHead>
+                  <SortableHead sortKey="date" sort={entrySort} onSort={toggleEntrySort}>
+                    Date
+                  </SortableHead>
+                  <SortableHead sortKey="hours" sort={entrySort} onSort={toggleEntrySort}>
+                    Hours
+                  </SortableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {projectTimeEntries
-                  .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-                  .map((entry) => (
+                {sortedEntries.map((entry) => (
                     <TableRow key={entry.id}>
                       <TableCell>
                         {format(new Date(entry.date), 'dd/MM/yyyy', { locale: enUS })}

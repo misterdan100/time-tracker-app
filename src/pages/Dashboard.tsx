@@ -5,7 +5,7 @@ import { Button } from '../components/ui/button';
 import StatCard from '../components/dashboard/StatCard';
 import ActivityCard from '../components/dashboard/ActivityCard';
 import { Clock, Building2, Users, Calendar, Sparkles, ChevronLeft, ChevronRight } from 'lucide-react';
-import { format, startOfMonth, endOfMonth, isWithinInterval, startOfWeek, endOfWeek, eachDayOfInterval, parseISO, addWeeks } from 'date-fns';
+import { format, startOfMonth, endOfMonth, isWithinInterval, eachDayOfInterval, parseISO, addDays, subDays, startOfDay } from 'date-fns';
 import { enUS } from 'date-fns/locale';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
@@ -59,13 +59,12 @@ const Dashboard: React.FC = () => {
     return project?.color || '#4285F4';
   };
 
-  // Navegación de semanas (0 = semana actual, negativo = semanas anteriores)
+  // Rolling 7-day window ending today (offset 0); each step moves the window 7 days.
   const [weekOffset, setWeekOffset] = useState(0);
-  const referenceDate = addWeeks(now, weekOffset);
-  const weekStart = startOfWeek(referenceDate, { weekStartsOn: 1 }); // Lunes como inicio
-  const weekEnd = endOfWeek(referenceDate, { weekStartsOn: 1 });
-  const daysOfWeek = eachDayOfInterval({ start: weekStart, end: weekEnd });
-  const weekRangeLabel = `${format(weekStart, 'MMM d', { locale: enUS })} – ${format(weekEnd, 'MMM d, yyyy', { locale: enUS })}`;
+  const windowEnd = startOfDay(addDays(now, weekOffset * 7));
+  const windowStart = subDays(windowEnd, 6);
+  const daysOfWeek = eachDayOfInterval({ start: windowStart, end: windowEnd });
+  const weekRangeLabel = `${format(windowStart, 'MMM d', { locale: enUS })} – ${format(windowEnd, 'MMM d, yyyy', { locale: enUS })}`;
 
   const weeklyData = daysOfWeek.map((day) => {
     const dayEntries = timeEntries.filter((entry) => {
@@ -74,7 +73,7 @@ const Dashboard: React.FC = () => {
     });
     const totalHours = dayEntries.reduce((sum, entry) => sum + entry.hours, 0);
     return {
-      day: format(day, 'EEE', { locale: enUS }),
+      day: format(day, 'EEE d', { locale: enUS }),
       hours: totalHours,
     };
   });
@@ -127,7 +126,7 @@ const Dashboard: React.FC = () => {
           <div>
             <h2 className="text-lg font-bold text-foreground">Time by Day</h2>
             <p className="text-sm text-muted-foreground">
-              {weekOffset === 0 ? `This week · ${weekRangeLabel}` : weekRangeLabel}
+              {weekOffset === 0 ? `Last 7 days · ${weekRangeLabel}` : weekRangeLabel}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -136,7 +135,7 @@ const Dashboard: React.FC = () => {
               size="icon"
               className="h-9 w-9"
               onClick={() => setWeekOffset((o) => o - 1)}
-              aria-label="Previous week"
+              aria-label="Previous 7 days"
             >
               <ChevronLeft className="h-4 w-4" />
             </Button>
@@ -146,7 +145,7 @@ const Dashboard: React.FC = () => {
               className="h-9 w-9"
               onClick={() => setWeekOffset((o) => Math.min(0, o + 1))}
               disabled={weekOffset >= 0}
-              aria-label="Next week"
+              aria-label="Next 7 days"
             >
               <ChevronRight className="h-4 w-4" />
             </Button>

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { toast } from 'sonner';
 import { useApp } from '../context/AppContext';
@@ -25,7 +25,9 @@ import {
   lastInvoicedPeriodEnd,
 } from '../lib/invoiceUtils';
 import { isProfileComplete } from '../lib/profileUtils';
-import { Invoice } from '../types';
+import { Invoice, InvoiceStatus, Project } from '../types';
+import { SortableHead } from '../components/ui/sortable-head';
+import { dateSortValue, SortAccessors, useSort } from '../lib/sort';
 import {
   ArrowLeft,
   Building2,
@@ -49,6 +51,19 @@ const fmt = (iso?: string | null) => {
   }
 };
 
+type InvoiceSortKey = 'number' | 'period' | 'hours' | 'amount' | 'status';
+type ProjectSortKey = 'name' | 'city' | 'address' | 'workType' | 'status' | 'hours';
+
+const STATUS_RANK: Record<InvoiceStatus, number> = { draft: 0, finalized: 1, paid: 2 };
+
+const invoiceAccessors: SortAccessors<Invoice, InvoiceSortKey> = {
+  number: (i) => parseInt((i.invoiceNumber ?? '').replace(/\D/g, ''), 10) || 0,
+  period: (i) => dateSortValue(i.periodEnd),
+  hours: (i) => i.totalHours,
+  amount: (i) => i.totalAmount,
+  status: (i) => STATUS_RANK[i.status] ?? 0,
+};
+
 const ClientDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -57,12 +72,44 @@ const ClientDetail: React.FC = () => {
   const [invoiceDialogOpen, setInvoiceDialogOpen] = useState(false);
 
   const client = clients.find((c) => c.id === id);
-  const clientProjects = client ? projects.filter((p) => p.clientId === client.id) : [];
+  const clientProjects = useMemo(
+    () => (client ? projects.filter((p) => p.clientId === client.id) : []),
+    [client, projects]
+  );
+  const myInvoices = useMemo(
+    () => (client ? clientInvoices(client.id, invoices) : []),
+    [client, invoices]
+  );
 
-  const getProjectHours = (projectId: string) => {
-    const projectEntries = timeEntries.filter((te) => te.projectId === projectId);
-    return projectEntries.reduce((total, entry) => total + entry.hours, 0);
-  };
+  const hoursByProject = useMemo(() => {
+    const map = new Map<string, number>();
+    timeEntries.forEach((te) => map.set(te.projectId, (map.get(te.projectId) ?? 0) + te.hours));
+    return map;
+  }, [timeEntries]);
+  const getProjectHours = (projectId: string) => hoursByProject.get(projectId) ?? 0;
+
+  const projectAccessors = useMemo<SortAccessors<Project, ProjectSortKey>>(
+    () => ({
+      name: (p) => p.name,
+      city: (p) => p.city,
+      address: (p) => p.address,
+      workType: (p) => p.workType,
+      status: (p) => p.status,
+      hours: (p) => hoursByProject.get(p.id) ?? 0,
+    }),
+    [hoursByProject]
+  );
+
+  const {
+    sort: invoiceSort,
+    toggle: toggleInvoiceSort,
+    sorted: sortedInvoices,
+  } = useSort(myInvoices, invoiceAccessors, { key: 'period', dir: 'desc' });
+  const {
+    sort: projectSort,
+    toggle: toggleProjectSort,
+    sorted: sortedProjects,
+  } = useSort(clientProjects, projectAccessors, { key: 'name', dir: 'asc' });
 
   const handleEdit = () => {
     setDialogOpen(true);
@@ -116,7 +163,6 @@ const ClientDetail: React.FC = () => {
   const unbilled = computeUnbilled(client.id, { projects, timeEntries });
   const unbilledAmount = unbilled.hours * (client.defaultRate || 0);
   const lastEnd = lastInvoicedPeriodEnd(client.id, invoices);
-  const myInvoices = clientInvoices(client.id, invoices);
 
   return (
     <div className="space-y-6">
@@ -262,16 +308,36 @@ const ClientDetail: React.FC = () => {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Number</TableHead>
-                  <TableHead className="hidden md:table-cell">Period</TableHead>
-                  <TableHead className="hidden sm:table-cell">Hours</TableHead>
-                  <TableHead>Amount</TableHead>
-                  <TableHead>Status</TableHead>
+                  <SortableHead sortKey="number" sort={invoiceSort} onSort={toggleInvoiceSort}>
+                    Number
+                  </SortableHead>
+                  <SortableHead
+                    sortKey="period"
+                    sort={invoiceSort}
+                    onSort={toggleInvoiceSort}
+                    className="hidden md:table-cell"
+                  >
+                    Period
+                  </SortableHead>
+                  <SortableHead
+                    sortKey="hours"
+                    sort={invoiceSort}
+                    onSort={toggleInvoiceSort}
+                    className="hidden sm:table-cell"
+                  >
+                    Hours
+                  </SortableHead>
+                  <SortableHead sortKey="amount" sort={invoiceSort} onSort={toggleInvoiceSort}>
+                    Amount
+                  </SortableHead>
+                  <SortableHead sortKey="status" sort={invoiceSort} onSort={toggleInvoiceSort}>
+                    Status
+                  </SortableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {myInvoices.map((invoice) => (
+                {sortedInvoices.map((invoice) => (
                   <TableRow key={invoice.id}>
                     <TableCell className="font-medium">
                       <Link
@@ -334,16 +400,43 @@ const ClientDetail: React.FC = () => {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead className="hidden md:table-cell">City</TableHead>
-                  <TableHead className="hidden lg:table-cell">Address</TableHead>
-                  <TableHead className="hidden sm:table-cell">Work Type</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Hours</TableHead>
+                  <SortableHead sortKey="name" sort={projectSort} onSort={toggleProjectSort}>
+                    Name
+                  </SortableHead>
+                  <SortableHead
+                    sortKey="city"
+                    sort={projectSort}
+                    onSort={toggleProjectSort}
+                    className="hidden md:table-cell"
+                  >
+                    City
+                  </SortableHead>
+                  <SortableHead
+                    sortKey="address"
+                    sort={projectSort}
+                    onSort={toggleProjectSort}
+                    className="hidden lg:table-cell"
+                  >
+                    Address
+                  </SortableHead>
+                  <SortableHead
+                    sortKey="workType"
+                    sort={projectSort}
+                    onSort={toggleProjectSort}
+                    className="hidden sm:table-cell"
+                  >
+                    Work Type
+                  </SortableHead>
+                  <SortableHead sortKey="status" sort={projectSort} onSort={toggleProjectSort}>
+                    Status
+                  </SortableHead>
+                  <SortableHead sortKey="hours" sort={projectSort} onSort={toggleProjectSort}>
+                    Hours
+                  </SortableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {clientProjects.map((project) => (
+                {sortedProjects.map((project) => (
                   <TableRow key={project.id}>
                     <TableCell className="font-medium">
                       <Link

@@ -10,14 +10,26 @@ import {
   TableHeader,
   TableRow,
 } from '../components/ui/table';
+import { SortableHead } from '../components/ui/sortable-head';
 import ClientDialog from '../components/dialogs/ClientDialog';
 import { Client } from '../types';
 import { Plus, Pencil, Trash2 } from 'lucide-react';
+import { SortAccessors, useSort } from '../lib/sort';
+
+type ClientSortKey = 'company' | 'owner' | 'country' | 'email';
+
+const clientAccessors: SortAccessors<Client, ClientSortKey> = {
+  company: (c) => c.companyName,
+  owner: (c) => c.ownerName,
+  country: (c) => c.country,
+  email: (c) => c.email,
+};
 
 const Clients: React.FC = () => {
   const { clients, addClient, updateClient, deleteClient, projects } = useApp();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editClient, setEditClient] = useState<Client | null>(null);
+  const { sort, toggle, sorted } = useSort(clients, clientAccessors, { key: 'company', dir: 'asc' });
 
   const handleSave = (clientData: Omit<Client, 'id'>) => {
     if (editClient) {
@@ -66,22 +78,30 @@ const Clients: React.FC = () => {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Company</TableHead>
-              <TableHead className="hidden sm:table-cell">Owner</TableHead>
-              <TableHead className="hidden md:table-cell">Country</TableHead>
-              <TableHead className="hidden md:table-cell">Email</TableHead>
+              <SortableHead sortKey="company" sort={sort} onSort={toggle}>
+                Company
+              </SortableHead>
+              <SortableHead sortKey="owner" sort={sort} onSort={toggle} className="hidden sm:table-cell">
+                Owner
+              </SortableHead>
+              <SortableHead sortKey="country" sort={sort} onSort={toggle} className="hidden md:table-cell">
+                Country
+              </SortableHead>
+              <SortableHead sortKey="email" sort={sort} onSort={toggle} className="hidden md:table-cell">
+                Email
+              </SortableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {clients.length === 0 ? (
+            {sorted.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
                   No clients registered
                 </TableCell>
               </TableRow>
             ) : (
-              clients.map((client) => (
+              sorted.map((client) => (
                 <TableRow key={client.id}>
                   <TableCell className="font-medium">
                     <Link

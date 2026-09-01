@@ -28,7 +28,7 @@ interface TimeEntryDialogProps {
   onOpenChange: (open: boolean) => void;
   onSave: (entry: Omit<TimeEntry, 'id'>) => void | Promise<void>;
   onUpdate?: (id: string, entry: Partial<TimeEntry>) => void | Promise<void>;
-  projects: Array<{ id: string; name: string; status: string }>;
+  projects: Array<{ id: string; name: string; status: string; createdAt?: string }>;
   editEntry?: TimeEntry;
 }
 
@@ -86,7 +86,17 @@ const TimeEntryDialog: React.FC<TimeEntryDialogProps> = ({
     }
   };
 
-  const activeProjects = projects.filter((p) => p.status === 'Active');
+  // Active projects, most recently created first (the list arrives oldest-first,
+  // so the index is the fallback when created_at is missing).
+  const activeProjects = projects
+    .map((p, index) => ({ p, index }))
+    .filter(({ p }) => p.status === 'Active')
+    .sort((a, b) => {
+      const ta = a.p.createdAt ? new Date(a.p.createdAt).getTime() : a.index;
+      const tb = b.p.createdAt ? new Date(b.p.createdAt).getTime() : b.index;
+      return tb - ta;
+    })
+    .map(({ p }) => p);
 
   const selectedDate = new Date(formData.date);
 
@@ -149,7 +159,7 @@ const TimeEntryDialog: React.FC<TimeEntryDialogProps> = ({
                         setCalendarOpen(false);
                       }
                     }}
-                    initialFocus
+                    autoFocus
                   />
                 </PopoverContent>
               </Popover>
