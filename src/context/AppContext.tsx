@@ -2,10 +2,19 @@ import React, { createContext, useContext, useState, useEffect, useCallback, Rea
 import { toast } from 'sonner';
 import { AppState, Client, Invoice, Profile, Project, TimeEntry } from '../types';
 import { supabase } from '../lib/supabase';
-import { buildLineItems, getClientEntriesInRange, groupByProject } from '../lib/invoiceUtils';
+import {
+  buildLineItems,
+  formatInvoiceNumber,
+  getClientEntriesInRange,
+  groupByProject,
+} from '../lib/invoiceUtils';
 import { normalizeProfile } from '../lib/profileUtils';
 import { normalizeWorkTypes } from '../lib/workTypes';
 import { useAuth } from './AuthContext';
+
+export interface MutationOpts {
+  silent?: boolean;
+}
 
 interface AppContextType {
   clients: Client[];
@@ -25,10 +34,11 @@ interface AppContextType {
   updateTimeEntry: (id: string, entry: Partial<TimeEntry>) => Promise<void>;
   deleteTimeEntry: (id: string) => Promise<void>;
   addInvoice: (invoice: Omit<Invoice, 'id'>) => Promise<Invoice | null>;
-  finalizeInvoice: (id: string) => Promise<void>;
-  markInvoicePaid: (id: string) => Promise<void>;
+  /** Resolve to true on success. `silent` skips the per-invoice success toast (bulk actions). */
+  finalizeInvoice: (id: string, opts?: MutationOpts) => Promise<boolean>;
+  markInvoicePaid: (id: string, opts?: MutationOpts) => Promise<boolean>;
   updateInvoice: (id: string, invoice: Partial<Invoice>) => Promise<void>;
-  deleteInvoice: (id: string) => Promise<void>;
+  deleteInvoice: (id: string, opts?: MutationOpts) => Promise<boolean>;
   saveProfile: (profile: Profile) => Promise<void>;
   addCity: (city: string) => void;
   exportData: () => void;
@@ -411,9 +421,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return created;
   };
 
-  const finalizeInvoice = async (id: string) => {
+  const finalizeInvoice = async (id: string, opts: MutationOpts = {}): Promise<boolean> => {
     const invoice = invoices.find((i) => i.id === id);
-    if (!invoice || invoice.status !== 'draft') return;
+    if (!invoice || invoice.status !== 'draft') return false;
 
     // Re-resolve the still-unbilled entries for this client/period/projects so two
     // overlapping drafts never bill the same hours twice.
@@ -426,10 +436,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       { onlyUnbilled: true, projectIds }
     );
     if (entries.length === 0) {
-      toast.error('No unbilled hours left in this period', {
+      toast.error(`No unbilled hours left for #${formatInvoiceNumber(invoice.invoiceNumber)}`, {
         description: 'These hours may already be on another invoice.',
       });
-      return;
+      return false;
     }
     const grouped = groupByProject(entries, projects);
     const { lineItems, totalHours, totalAmount } = buildLineItems(grouped, invoice.hourlyRate);
@@ -446,7 +456,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (error) {
       console.error('Error finalizing invoice:', error.message);
       toast.error('Could not finalize invoice', { description: error.message });
-      return;
+      return false;
     }
 
     const entryIds = entries.map((e) => e.id);
@@ -466,10 +476,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setTimeEntries((prev) =>
       prev.map((te) => (stampedIds.has(te.id) ? { ...te, invoiceId: id } : te))
     );
-    toast.success('Invoice finalized');
+    if (!opts.silent) toast.success('Invoice finalized');
+    return true;
   };
 
-  const markInvoicePaid = async (id: string) => {
+  const markInvoicePaid = async (id: string, opts: MutationOpts = {}): Promise<boolean> => {
     const paidAt = new Date().toISOString();
     const { data, error } = await supabase
       .from('invoices')
@@ -480,10 +491,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (error) {
       console.error('Error marking invoice paid:', error.message);
       toast.error('Could not update invoice', { description: error.message });
-      return;
+      return false;
     }
     setInvoices((prev) => prev.map((i) => (i.id === id ? rowToInvoice(data) : i)));
-    toast.success('Invoice marked as paid');
+    if (!opts.silent) toast.success('Invoice marked as paid');
+    return true;
   };
 
   const updateInvoice = async (id: string, updates: Partial<Invoice>) => {
@@ -502,19 +514,20 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     toast.success('Invoice updated');
   };
 
-  const deleteInvoice = async (id: string) => {
+  const deleteInvoice = async (id: string, opts: MutationOpts = {}): Promise<boolean> => {
     const { error } = await supabase.from('invoices').delete().eq('id', id);
     if (error) {
       console.error('Error deleting invoice:', error.message);
       toast.error('Could not delete invoice', { description: error.message });
-      return;
+      return false;
     }
     // DB sets time_entries.invoice_id to null (on delete set null); mirror locally.
     setInvoices((prev) => prev.filter((i) => i.id !== id));
     setTimeEntries((prev) =>
       prev.map((te) => (te.invoiceId === id ? { ...te, invoiceId: null } : te))
     );
-    toast.success('Invoice deleted');
+    if (!opts.silent) toast.success('Invoice deleted');
+    return true;
   };
 
   // ---------- profile ----------

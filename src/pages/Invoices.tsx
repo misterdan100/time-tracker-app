@@ -45,6 +45,9 @@ import {
   Eye,
   Pencil,
   AlertTriangle,
+  FileCheck,
+  CheckCircle2,
+  X,
 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 
@@ -61,8 +64,10 @@ type InvoiceSortKey = 'number' | 'client' | 'period' | 'hours' | 'amount' | 'sta
 const ALL_CLIENTS = 'all';
 const STATUS_RANK: Record<InvoiceStatus, number> = { draft: 0, finalized: 1, paid: 2 };
 
+type BulkAction = 'finalize' | 'paid' | 'download' | 'delete';
+
 const Invoices: React.FC = () => {
-  const { invoices, clients, profile, deleteInvoice } = useApp();
+  const { invoices, clients, profile, deleteInvoice, finalizeInvoice, markInvoicePaid } = useApp();
   const navigate = useNavigate();
   const profileComplete = isProfileComplete(profile);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -70,6 +75,10 @@ const Invoices: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<InvoiceStatus | 'All'>('All');
   const [clientFilter, setClientFilter] = useState<string>(ALL_CLIENTS);
   const [deleteTarget, setDeleteTarget] = useState<Invoice | null>(null);
+  // Bulk selection (ids); only the currently visible (filtered) rows count.
+  const [selected, setSelected] = useState<Set<string>>(() => new Set());
+  const [bulkConfirm, setBulkConfirm] = useState<null | 'finalize' | 'delete'>(null);
+  const [bulkBusy, setBulkBusy] = useState<BulkAction | null>(null);
 
   const openNew = () => {
     if (!profileComplete) {
@@ -116,6 +125,83 @@ const Invoices: React.FC = () => {
     [clients]
   );
   const { sort, toggle, sorted } = useSort(filtered, accessors, { key: 'period', dir: 'desc' });
+
+  // ----- bulk selection -----
+  const visibleSelected = sorted.filter((i) => selected.has(i.id));
+  const allVisibleSelected = sorted.length > 0 && visibleSelected.length === sorted.length;
+  const someVisibleSelected = visibleSelected.length > 0 && !allVisibleSelected;
+  const selectedDrafts = visibleSelected.filter((i) => i.status === 'draft');
+  const selectedFinalized = visibleSelected.filter((i) => i.status === 'finalized');
+
+  const toggleOne = (id: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const toggleAllVisible = () =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (allVisibleSelected) sorted.forEach((i) => next.delete(i.id));
+      else sorted.forEach((i) => next.add(i.id));
+      return next;
+    });
+  const clearSelection = () => setSelected(new Set());
+
+  const runBulk = async (
+    action: BulkAction,
+    targets: Invoice[],
+    fn: (invoice: Invoice) => Promise<boolean>,
+    label: { done: string; failed: string }
+  ) => {
+    if (targets.length === 0 || bulkBusy) return;
+    setBulkBusy(action);
+    let ok = 0;
+    for (const inv of targets) {
+      // Sequential on purpose: keeps DB writes ordered and avoids a burst of parallel downloads.
+      if (await fn(inv)) ok += 1;
+    }
+    setBulkBusy(null);
+    setBulkConfirm(null);
+    const failed = targets.length - ok;
+    if (ok > 0) toast.success(`${ok} ${ok === 1 ? 'invoice' : 'invoices'} ${label.done}`);
+    if (failed > 0) toast.error(`${failed} ${failed === 1 ? 'invoice' : 'invoices'} ${label.failed}`);
+    if (action !== 'download') clearSelection();
+  };
+
+  const bulkFinalize = () =>
+    runBulk('finalize', selectedDrafts, (i) => finalizeInvoice(i.id, { silent: true }), {
+      done: 'finalized',
+      failed: 'could not be finalized',
+    });
+  const bulkMarkPaid = () =>
+    runBulk('paid', selectedFinalized, (i) => markInvoicePaid(i.id, { silent: true }), {
+      done: 'marked as paid',
+      failed: 'could not be updated',
+    });
+  const bulkDelete = () =>
+    runBulk('delete', visibleSelected, (i) => deleteInvoice(i.id, { silent: true }), {
+      done: 'deleted',
+      failed: 'could not be deleted',
+    });
+  const bulkDownload = () =>
+    runBulk(
+      'download',
+      visibleSelected,
+      async (i) => {
+        try {
+          await downloadInvoice(i, clients.find((c) => c.id === i.clientId), profile);
+          return true;
+        } catch (err) {
+          console.error('Error generating PDF:', err);
+          return false;
+        }
+      },
+      { done: 'downloaded', failed: 'could not be downloaded' }
+    );
+
+  const selectedNonDraftCount = visibleSelected.filter((i) => i.status !== 'draft').length;
 
   const draftCount = invoices.filter((i) => i.status === 'draft').length;
   const outstanding = invoices.filter((i) => i.status === 'finalized');
@@ -229,10 +315,85 @@ const Invoices: React.FC = () => {
         </div>
       </div>
 
+      {visibleSelected.length > 0 && (
+        <div
+          role="toolbar"
+          aria-label="Bulk actions"
+          className="flex flex-col gap-3 rounded-2xl border border-primary/30 bg-primary/5 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+        >
+          <div className="flex items-center gap-3">
+            <span className="text-sm font-semibold text-foreground">
+              {visibleSelected.length} selected
+            </span>
+            <Button variant="ghost" size="sm" onClick={clearSelection} disabled={!!bulkBusy}>
+              <X className="mr-1 h-3.5 w-3.5" />
+              Clear
+            </Button>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setBulkConfirm('finalize')}
+              disabled={!!bulkBusy || selectedDrafts.length === 0}
+              title={
+                selectedDrafts.length === 0
+                  ? 'Select at least one draft'
+                  : `Finalize ${selectedDrafts.length} draft${selectedDrafts.length === 1 ? '' : 's'}`
+              }
+            >
+              <FileCheck className="mr-1 h-4 w-4" />
+              Finalize{selectedDrafts.length > 0 ? ` (${selectedDrafts.length})` : ''}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={bulkMarkPaid}
+              disabled={!!bulkBusy || selectedFinalized.length === 0}
+              title={
+                selectedFinalized.length === 0
+                  ? 'Select at least one finalized invoice'
+                  : `Mark ${selectedFinalized.length} as paid`
+              }
+            >
+              <CheckCircle2 className="mr-1 h-4 w-4" />
+              {bulkBusy === 'paid' ? 'Updating…' : 'Mark paid'}
+              {bulkBusy !== 'paid' && selectedFinalized.length > 0 ? ` (${selectedFinalized.length})` : ''}
+            </Button>
+            <Button variant="outline" size="sm" onClick={bulkDownload} disabled={!!bulkBusy}>
+              <Download className="mr-1 h-4 w-4" />
+              {bulkBusy === 'download' ? 'Generating…' : 'Download PDFs'}
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => setBulkConfirm('delete')}
+              disabled={!!bulkBusy}
+            >
+              <Trash2 className="mr-1 h-4 w-4" />
+              Delete
+            </Button>
+          </div>
+        </div>
+      )}
+
       <div className="overflow-hidden rounded-2xl border border-border/60 bg-card shadow-soft">
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-10 pr-0">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 accent-primary"
+                  aria-label={allVisibleSelected ? 'Deselect all invoices' : 'Select all invoices'}
+                  checked={allVisibleSelected}
+                  ref={(el) => {
+                    if (el) el.indeterminate = someVisibleSelected;
+                  }}
+                  onChange={toggleAllVisible}
+                  disabled={sorted.length === 0 || !!bulkBusy}
+                />
+              </TableHead>
               <SortableHead sortKey="number" sort={sort} onSort={toggle}>
                 Number
               </SortableHead>
@@ -257,7 +418,7 @@ const Invoices: React.FC = () => {
           <TableBody>
             {sorted.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
+                <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
                   {invoices.length === 0
                     ? 'No invoices yet. Create your first one.'
                     : 'No invoices match these filters.'}
@@ -265,7 +426,17 @@ const Invoices: React.FC = () => {
               </TableRow>
             ) : (
               sorted.map((invoice) => (
-                <TableRow key={invoice.id}>
+                <TableRow key={invoice.id} data-state={selected.has(invoice.id) ? 'selected' : undefined}>
+                  <TableCell className="w-10 pr-0">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 accent-primary"
+                      aria-label={`Select invoice #${formatInvoiceNumber(invoice.invoiceNumber)}`}
+                      checked={selected.has(invoice.id)}
+                      onChange={() => toggleOne(invoice.id)}
+                      disabled={!!bulkBusy}
+                    />
+                  </TableCell>
                   <TableCell className="font-medium">
                     <Link
                       to={`/invoice/${invoice.id}`}
@@ -345,6 +516,44 @@ const Invoices: React.FC = () => {
         editInvoice={editTarget}
         onCreated={(invoice) => navigate(`/invoice/${invoice.id}`)}
       />
+
+      {/* Bulk confirm (finalize / delete) */}
+      <Dialog open={!!bulkConfirm} onOpenChange={(open) => !open && !bulkBusy && setBulkConfirm(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {bulkConfirm === 'finalize'
+                ? `Finalize ${selectedDrafts.length} ${selectedDrafts.length === 1 ? 'draft' : 'drafts'}?`
+                : `Delete ${visibleSelected.length} ${visibleSelected.length === 1 ? 'invoice' : 'invoices'}?`}
+            </DialogTitle>
+            <DialogDescription>
+              {bulkConfirm === 'finalize'
+                ? 'This locks the hours in each period so they cannot be billed on another invoice. Each draft is re-checked for hours already billed elsewhere before finalizing; drafts with nothing left to bill are skipped.'
+                : `This will permanently delete the selected invoices.${
+                    selectedNonDraftCount > 0
+                      ? ` Hours from the ${selectedNonDraftCount} finalized or paid ${
+                          selectedNonDraftCount === 1 ? 'invoice' : 'invoices'
+                        } will be released back to uninvoiced.`
+                      : ''
+                  } This action cannot be undone.`}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBulkConfirm(null)} disabled={!!bulkBusy}>
+              Cancel
+            </Button>
+            {bulkConfirm === 'finalize' ? (
+              <Button onClick={bulkFinalize} disabled={!!bulkBusy}>
+                {bulkBusy === 'finalize' ? 'Finalizing…' : 'Finalize'}
+              </Button>
+            ) : (
+              <Button variant="destructive" onClick={bulkDelete} disabled={!!bulkBusy}>
+                {bulkBusy === 'delete' ? 'Deleting…' : 'Delete'}
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={!!deleteTarget}
