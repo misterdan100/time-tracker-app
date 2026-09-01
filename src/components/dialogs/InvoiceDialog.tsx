@@ -33,6 +33,7 @@ import {
   formatInvoiceNumber,
   nextInvoiceNumberForClient,
   parseInvoiceNumber,
+  suggestInvoicePeriod,
 } from '../../lib/invoiceUtils';
 
 interface InvoiceDialogProps {
@@ -59,6 +60,9 @@ const InvoiceDialog: React.FC<InvoiceDialogProps> = ({
   // Read latest invoices inside the open-effect without making it a dependency.
   const invoicesRef = useRef(invoices);
   invoicesRef.current = invoices;
+  // Same trick for the data the period suggestion needs.
+  const dataRef = useRef({ projects, timeEntries, invoices });
+  dataRef.current = { projects, timeEntries, invoices };
 
   const isEditing = !!editInvoice;
   const clientLocked = !!lockedClientId || isEditing;
@@ -77,6 +81,14 @@ const InvoiceDialog: React.FC<InvoiceDialogProps> = ({
   const [endOpen, setEndOpen] = useState(false);
   const [saving, setSaving] = useState(false);
 
+  // Pre-fill the period so it covers the client's not-yet-invoiced hours through today.
+  const applySuggestedPeriod = (cid: string) => {
+    const s = suggestInvoicePeriod(cid, dataRef.current);
+    setPeriodStart(s.start);
+    setPeriodEnd(s.end);
+    setSelection(null);
+  };
+
   // Initialize when (re)opened.
   useEffect(() => {
     if (!open) return;
@@ -94,8 +106,12 @@ const InvoiceDialog: React.FC<InvoiceDialogProps> = ({
     } else {
       const cid = lockedClientId ?? '';
       setClientId(cid);
-      setPeriodStart(startOfMonth(new Date()).toISOString());
-      setPeriodEnd(new Date().toISOString());
+      if (cid) {
+        applySuggestedPeriod(cid);
+      } else {
+        setPeriodStart(startOfMonth(new Date()).toISOString());
+        setPeriodEnd(new Date().toISOString());
+      }
       setHourlyRate('');
       setCurrency('COP');
       setTitle('');
@@ -148,6 +164,7 @@ const InvoiceDialog: React.FC<InvoiceDialogProps> = ({
     setClientId(v);
     setSelection(null);
     setInvoiceNumber(v ? String(nextInvoiceNumberForClient(v, invoices)) : '');
+    if (v) applySuggestedPeriod(v);
   };
   const handleStart = (date: Date) => {
     setPeriodStart(date.toISOString());
@@ -170,6 +187,25 @@ const InvoiceDialog: React.FC<InvoiceDialogProps> = ({
     setPeriodEnd(endOfMonth(ref).toISOString());
     setSelection(null);
   };
+
+  // Explain where the suggested range comes from (create mode only).
+  const suggested = useMemo(
+    () => (clientId ? suggestInvoicePeriod(clientId, { projects, timeEntries, invoices }) : null),
+    [clientId, projects, timeEntries, invoices]
+  );
+  const fmtDate = (iso: string) => format(new Date(iso), 'dd/MM/yyyy', { locale: enUS });
+  const suggestionHint = (() => {
+    if (isEditing || !suggested) return null;
+    if (suggested.basis === 'after-last-invoice' && suggested.lastPeriodEnd) {
+      return `Last invoice covered through ${fmtDate(suggested.lastPeriodEnd)}. Suggested range starts the next day.`;
+    }
+    if (suggested.basis === 'earlier-unbilled') {
+      return suggested.lastPeriodEnd
+        ? `Unbilled hours exist before the last invoice (${fmtDate(suggested.lastPeriodEnd)}); suggested range extends back to include them.`
+        : 'No invoices yet — suggested range starts at the oldest unbilled entry.';
+    }
+    return null;
+  })();
 
   const rate = parseFloat(hourlyRate) || 0;
   const selectedBreakdown = breakdown.filter((b) => isSelected(b.projectId));
@@ -307,6 +343,16 @@ const InvoiceDialog: React.FC<InvoiceDialogProps> = ({
               <div className="flex items-center justify-between">
                 <Label>Period</Label>
                 <div className="flex gap-1">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => applySuggestedPeriod(clientId)}
+                    disabled={!clientId}
+                    title="Range covering hours not yet in any invoice, through today"
+                  >
+                    Unbilled
+                  </Button>
                   <Button type="button" variant="ghost" size="sm" onClick={setThisMonth}>
                     This month
                   </Button>
@@ -328,7 +374,7 @@ const InvoiceDialog: React.FC<InvoiceDialogProps> = ({
                       mode="single"
                       selected={new Date(periodStart)}
                       onSelect={(date) => date && handleStart(date)}
-                      initialFocus
+                      autoFocus
                     />
                   </PopoverContent>
                 </Popover>
@@ -344,11 +390,14 @@ const InvoiceDialog: React.FC<InvoiceDialogProps> = ({
                       mode="single"
                       selected={new Date(periodEnd)}
                       onSelect={(date) => date && handleEnd(date)}
-                      initialFocus
+                      autoFocus
                     />
                   </PopoverContent>
                 </Popover>
               </div>
+              {suggestionHint ? (
+                <p className="text-xs text-muted-foreground">{suggestionHint}</p>
+              ) : null}
             </div>
 
             {/* Projects */}

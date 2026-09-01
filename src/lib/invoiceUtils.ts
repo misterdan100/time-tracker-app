@@ -1,4 +1,4 @@
-import { endOfDay, isWithinInterval, parseISO, startOfDay } from 'date-fns';
+import { addDays, endOfDay, isWithinInterval, parseISO, startOfDay, startOfMonth } from 'date-fns';
 import { Country, Invoice, InvoiceLineItem, InvoiceStatus, Project, TimeEntry } from '../types';
 
 /** The slice of app state these helpers need. */
@@ -218,4 +218,81 @@ export function nextInvoiceNumberForClient(clientId: string, invoices: Invoice[]
 /** Display form of an invoice number: zero-padded to 3 digits (8 -> "008"). */
 export function formatInvoiceNumber(invoiceNumber: string | number): string {
   return String(invoiceNumber).padStart(3, '0');
+}
+
+// ---------- suggested billing period ----------
+
+export interface SuggestedPeriod {
+  start: string; // ISO
+  end: string; // ISO (today)
+  /** Latest period end across the client's invoices (any status), or null. */
+  lastPeriodEnd: string | null;
+  basis: 'after-last-invoice' | 'earlier-unbilled' | 'default';
+}
+
+/**
+ * Suggest the period for a new invoice so it covers hours not yet inside any
+ * invoice: from the day after the latest invoice period end (drafts included),
+ * pulled back to the oldest unbilled entry that no draft already covers,
+ * through today. Falls back to the current month when there is nothing to go on.
+ */
+export function suggestInvoicePeriod(
+  clientId: string,
+  data: DataSlice & { invoices: Invoice[] },
+  now: Date = new Date()
+): SuggestedPeriod {
+  const mine = data.invoices.filter((i) => i.clientId === clientId);
+
+  // Latest period end across all of the client's invoices (compare as dates, not strings).
+  let lastEnd: Date | null = null;
+  for (const inv of mine) {
+    const end = parseISO(inv.periodEnd);
+    if (Number.isNaN(end.getTime())) continue;
+    if (lastEnd === null || end > lastEnd) lastEnd = end;
+  }
+
+  // Drafts link no entries yet, so treat their period as "covered".
+  const draftRanges = mine
+    .filter((i) => i.status === 'draft')
+    .map((i) => ({ start: startOfDay(parseISO(i.periodStart)), end: endOfDay(parseISO(i.periodEnd)) }))
+    .filter((r) => !Number.isNaN(r.start.getTime()) && !Number.isNaN(r.end.getTime()) && r.start <= r.end);
+
+  const projectIds = new Set(getClientProjectIds(clientId, data.projects));
+  let earliestUncovered: Date | null = null;
+  for (const e of data.timeEntries) {
+    if (!projectIds.has(e.projectId) || e.invoiceId) continue;
+    const d = parseISO(e.date);
+    if (Number.isNaN(d.getTime())) continue;
+    if (draftRanges.some((r) => isWithinInterval(d, r))) continue;
+    if (earliestUncovered === null || d < earliestUncovered) earliestUncovered = d;
+  }
+
+  const dayAfterLast = lastEnd ? startOfDay(addDays(lastEnd, 1)) : null;
+  const earliest = earliestUncovered ? startOfDay(earliestUncovered) : null;
+
+  let start: Date;
+  let basis: SuggestedPeriod['basis'];
+  if (dayAfterLast === null && earliest === null) {
+    start = startOfMonth(now);
+    basis = 'default';
+  } else if (dayAfterLast === null) {
+    start = earliest as Date;
+    basis = 'earlier-unbilled';
+  } else if (earliest !== null && earliest < dayAfterLast) {
+    start = earliest;
+    basis = 'earlier-unbilled';
+  } else {
+    start = dayAfterLast;
+    basis = 'after-last-invoice';
+  }
+
+  const end = now;
+  if (start > end) start = startOfDay(end);
+
+  return {
+    start: start.toISOString(),
+    end: end.toISOString(),
+    lastPeriodEnd: lastEnd ? lastEnd.toISOString() : null,
+    basis,
+  };
 }
