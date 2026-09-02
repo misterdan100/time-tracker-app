@@ -1,79 +1,116 @@
+import animate from 'tailwindcss-animate';
+
+/** Map a token family to bg/fg/border colors, e.g. tint.blue.bg -> var(--tint-blue-bg). */
+const triple = (prefix, names) =>
+  Object.fromEntries(
+    names.map((n) => [
+      n,
+      {
+        bg: `var(--${prefix}-${n}-bg)`,
+        fg: `var(--${prefix}-${n}-fg)`,
+        border: `var(--${prefix}-${n}-border)`,
+      },
+    ])
+  );
+
 export default {
   darkMode: 'class',
-  content: [
-    "./index.html",
-    "./src/**/*.{js,ts,jsx,tsx}",
-  ],
+  content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
   theme: {
     extend: {
       fontFamily: {
-        sans: [
-          "Inter",
-          "ui-sans-serif",
-          "system-ui",
-          "-apple-system",
-          "Segoe UI",
-          "Roboto",
-          "Helvetica",
-          "Arial",
-          "sans-serif",
-        ],
+        sans: ['var(--font-sans)'],
       },
       colors: {
-        // Colores de acento de marca (fijos, no dependen del tema light/dark)
-        brand: {
-          green: "#22C55E",
-          blue: "#4285F4",
-          orange: "#F79332",
-          "blue-soft": "#EEF5FF",
-          beige: "#F8F1E7",
-          "green-soft": "#DDF7E6",
-        },
-        border: "hsl(var(--border))",
-        input: "hsl(var(--input))",
-        ring: "hsl(var(--ring))",
-        background: "hsl(var(--background))",
-        foreground: "hsl(var(--foreground))",
+        border: 'hsl(var(--border))',
+        input: 'hsl(var(--input))',
+        ring: 'hsl(var(--ring))',
+        background: 'hsl(var(--background))',
+        foreground: 'hsl(var(--foreground))',
         primary: {
-          DEFAULT: "hsl(var(--primary))",
-          foreground: "hsl(var(--primary-foreground))",
+          DEFAULT: 'hsl(var(--primary))',
+          foreground: 'hsl(var(--primary-foreground))',
         },
         secondary: {
-          DEFAULT: "hsl(var(--secondary))",
-          foreground: "hsl(var(--secondary-foreground))",
+          DEFAULT: 'hsl(var(--secondary))',
+          foreground: 'hsl(var(--secondary-foreground))',
         },
         destructive: {
-          DEFAULT: "hsl(var(--destructive))",
-          foreground: "hsl(var(--destructive-foreground))",
+          DEFAULT: 'hsl(var(--destructive))',
+          foreground: 'hsl(var(--destructive-foreground))',
         },
         muted: {
-          DEFAULT: "hsl(var(--muted))",
-          foreground: "hsl(var(--muted-foreground))",
+          DEFAULT: 'hsl(var(--muted))',
+          foreground: 'hsl(var(--muted-foreground))',
         },
         accent: {
-          DEFAULT: "hsl(var(--accent))",
-          foreground: "hsl(var(--accent-foreground))",
+          DEFAULT: 'hsl(var(--accent))',
+          foreground: 'hsl(var(--accent-foreground))',
         },
         popover: {
-          DEFAULT: "hsl(var(--popover))",
-          foreground: "hsl(var(--popover-foreground))",
+          DEFAULT: 'hsl(var(--popover))',
+          foreground: 'hsl(var(--popover-foreground))',
         },
         card: {
-          DEFAULT: "hsl(var(--card))",
-          foreground: "hsl(var(--card-foreground))",
+          DEFAULT: 'hsl(var(--card))',
+          foreground: 'hsl(var(--card-foreground))',
         },
+        // Token-driven surfaces (full color values, may carry alpha).
+        surface: 'var(--surface)',
+        hairline: 'var(--hairline)',
+        overlay: 'var(--overlay)',
+        sidebar: 'var(--sidebar)',
+        'tint-chip': 'var(--tint-chip)',
+        'nav-active': {
+          DEFAULT: 'var(--nav-active-bg)',
+          fg: 'var(--nav-active-fg)',
+        },
+        link: {
+          DEFAULT: 'var(--link)',
+          hover: 'var(--link-hover)',
+        },
+        tint: triple('tint', ['blue', 'beige', 'green', 'orange']),
+        status: triple('status', [
+          'success',
+          'warning',
+          'info',
+          'neutral',
+          'danger',
+          'purple',
+          'teal',
+        ]),
       },
       borderRadius: {
-        lg: "var(--radius)",
-        md: "calc(var(--radius) - 2px)",
-        sm: "calc(var(--radius) - 4px)",
-        card: "20px",
+        lg: 'var(--radius)',
+        md: 'calc(var(--radius) - 2px)',
+        sm: 'calc(var(--radius) - 4px)',
+        control: 'var(--radius-control)',
+        card: 'var(--radius-card)',
+        panel: 'var(--radius-panel)',
+        pill: 'var(--radius-pill)',
+        badge: 'var(--radius-badge)',
       },
       boxShadow: {
-        soft: "0 10px 30px rgba(0,0,0,.06)",
-        float: "0 10px 30px rgba(0,0,0,.08)",
+        card: 'var(--shadow-card)',
+        float: 'var(--shadow-float)',
+        button: 'var(--shadow-button)',
+        'nav-active': 'var(--shadow-nav-active)',
+        soft: 'var(--shadow-card)',
+      },
+      height: {
+        control: 'var(--control-height)',
+        btn: 'var(--button-height)',
+        'btn-sm': 'calc(var(--button-height) - 0.25rem)',
+        'btn-lg': 'calc(var(--button-height) + 0.25rem)',
+      },
+      width: {
+        btn: 'var(--button-height)',
+        sidebar: 'var(--sidebar-width)',
+      },
+      spacing: {
+        'sidebar-gap': 'var(--sidebar-gap)',
       },
     },
   },
-  plugins: [],
-}
+  plugins: [animate],
+};

@@ -37,6 +37,7 @@ import {
 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { SortableHead } from '../components/ui/sortable-head';
+import PageHeader from '../components/layout/PageHeader';
 import { SortAccessors, useSort } from '../lib/sort';
 import { InvoiceLineItem } from '../types';
 
@@ -125,35 +126,23 @@ const InvoiceDetail: React.FC = () => {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex min-w-0 items-center gap-3">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="shrink-0"
-            onClick={() => navigate('/invoices')}
-          >
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-          <div className="min-w-0">
-            <div className="flex items-center gap-3">
-              <h1 className="truncate text-2xl font-bold text-foreground sm:text-3xl">
-                #{formatInvoiceNumber(invoice.invoiceNumber)}
-              </h1>
-              <InvoiceStatusBadge status={invoice.status} />
-            </div>
-            <p className="text-muted-foreground">
-              {client ? (
-                <Link to={`/client/${client.id}`} className="hover:underline">
-                  {client.companyName}
-                </Link>
-              ) : (
-                'Unknown client'
-              )}
-              {invoice.title ? ` · ${invoice.title}` : ''}
-            </p>
-          </div>
-        </div>
+      <PageHeader
+        title={`#${formatInvoiceNumber(invoice.invoiceNumber)}`}
+        titleAddon={<InvoiceStatusBadge status={invoice.status} />}
+        onBack={() => navigate('/invoices')}
+        subtitle={
+          <>
+            {client ? (
+              <Link to={`/client/${client.id}`} className="hover:underline">
+                {client.companyName}
+              </Link>
+            ) : (
+              'Unknown client'
+            )}
+            {invoice.title ? ` · ${invoice.title}` : ''}
+          </>
+        }
+        actions={
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" className="gap-2" onClick={handleDownload}>
             <Download className="h-4 w-4" />
@@ -186,7 +175,8 @@ const InvoiceDetail: React.FC = () => {
             <Trash2 className="h-4 w-4 text-destructive" />
           </Button>
         </div>
-      </div>
+        }
+      />
 
       {/* Metrics */}
       <div className="grid gap-4 sm:grid-cols-3">

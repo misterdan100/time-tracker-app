@@ -32,6 +32,8 @@ import { Plus, Pencil, Trash2 } from 'lucide-react';
 import { dateSortValue, SortAccessors, useSort } from '../lib/sort';
 import { workTypesLabel } from '../lib/workTypes';
 import WorkTypeTags from '../components/project/WorkTypeTags';
+import ProjectStatusBadge from '../components/project/ProjectStatusBadge';
+import PageHeader from '../components/layout/PageHeader';
 
 type ProjectSortKey = 'name' | 'client' | 'city' | 'address' | 'workType' | 'status' | 'hours' | 'created';
 
@@ -121,16 +123,16 @@ const Projects: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground sm:text-3xl">Projects</h1>
-          <p className="text-muted-foreground">Manage your projects</p>
-        </div>
-        <Button onClick={() => setDialogOpen(true)} className="gap-2 w-full sm:w-auto">
-          <Plus className="w-4 h-4" />
-          Add Project
-        </Button>
-      </div>
+      <PageHeader
+        title="Projects"
+        subtitle="Manage your projects"
+        actions={
+          <Button onClick={() => setDialogOpen(true)} className="gap-2 w-full sm:w-auto">
+            <Plus className="w-4 h-4" />
+            Add Project
+          </Button>
+        }
+      />
 
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
@@ -168,7 +170,7 @@ const Projects: React.FC = () => {
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-2xl border border-border/60 bg-card shadow-soft">
+      <div className="surface overflow-hidden">
         <Table>
           <TableHeader>
             <TableRow>
@@ -209,7 +211,7 @@ const Projects: React.FC = () => {
                   <TableCell className="font-medium">
                     <Link
                       to={`/project/${project.id}`}
-                      className="font-medium text-green-700 hover:text-green-800 hover:underline dark:text-green-400 dark:hover:text-green-300"
+                      className="link"
                     >
                       {project.name}
                     </Link>
@@ -217,7 +219,7 @@ const Projects: React.FC = () => {
                   <TableCell className="hidden md:table-cell">
                     <Link
                       to={`/client/${project.clientId}`}
-                      className="font-medium text-green-700 hover:text-green-800 hover:underline dark:text-green-400 dark:hover:text-green-300"
+                      className="link"
                     >
                       {getClientName(project.clientId)}
                     </Link>
@@ -228,17 +230,7 @@ const Projects: React.FC = () => {
                     <WorkTypeTags types={project.workTypes} />
                   </TableCell>
                   <TableCell className="hidden sm:table-cell">
-                    <span
-                      className={`px-2 py-1 rounded-full text-xs font-medium ${
-                        project.status === 'Active'
-                          ? 'bg-green-100 text-green-800 dark:bg-green-500/15 dark:text-green-300'
-                          : project.status === 'Paused'
-                          ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-500/15 dark:text-yellow-300'
-                          : 'bg-gray-100 text-gray-800 dark:bg-white/10 dark:text-gray-300'
-                      }`}
-                    >
-                      {project.status}
-                    </span>
+                    <ProjectStatusBadge status={project.status} />
                   </TableCell>
                   <TableCell className="font-medium">{getProjectHours(project.id).toFixed(2)}h</TableCell>
                   <TableCell className="text-right">

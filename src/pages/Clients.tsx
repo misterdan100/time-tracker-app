@@ -11,6 +11,7 @@ import {
   TableRow,
 } from '../components/ui/table';
 import { SortableHead } from '../components/ui/sortable-head';
+import PageHeader from '../components/layout/PageHeader';
 import ClientDialog from '../components/dialogs/ClientDialog';
 import { Client } from '../types';
 import { Plus, Pencil, Trash2 } from 'lucide-react';
@@ -63,18 +64,18 @@ const Clients: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground sm:text-3xl">Clients</h1>
-          <p className="text-muted-foreground">Manage your clients</p>
-        </div>
-        <Button onClick={() => setDialogOpen(true)} className="gap-2 w-full sm:w-auto">
-          <Plus className="w-4 h-4" />
-          Add Client
-        </Button>
-      </div>
+      <PageHeader
+        title="Clients"
+        subtitle="Manage your clients"
+        actions={
+          <Button onClick={() => setDialogOpen(true)} className="gap-2 w-full sm:w-auto">
+            <Plus className="w-4 h-4" />
+            Add Client
+          </Button>
+        }
+      />
 
-      <div className="overflow-hidden rounded-2xl border border-border/60 bg-card shadow-soft">
+      <div className="surface overflow-hidden">
         <Table>
           <TableHeader>
             <TableRow>
@@ -106,7 +107,7 @@ const Clients: React.FC = () => {
                   <TableCell className="font-medium">
                     <Link
                       to={`/client/${client.id}`}
-                      className="font-medium text-green-700 hover:text-green-800 hover:underline dark:text-green-400 dark:hover:text-green-300"
+                      className="link"
                     >
                       {client.companyName}
                     </Link>

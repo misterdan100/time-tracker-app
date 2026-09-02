@@ -2,64 +2,251 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ============================================================================
+   DESIGN TOKENS — "Mint" design system
+   ----------------------------------------------------------------------------
+   Airy teal dashboard: light blue-lavender canvas with soft color blobs, white
+   borderless cards with a diffuse shadow, Open Sans, deep-teal accent, pastel
+   tints for metrics and badges. Light (`:root`) and dark (`.dark` on <html>).
+
+   HSL triplets (`--background`, `--primary`, …) feed Tailwind's `hsl(var(--x))`
+   colors. Full color values (`--hairline`, `--surface`, tints, statuses…) are
+   used verbatim so they can carry alpha.
+   ========================================================================== */
+
 @layer base {
   :root {
-    /* Canvas gris muy claro sobre el que flota toda la UI (#E9EDF2) */
-    --background: 214 27% 93%;
-    --foreground: 222 47% 11%; /* #111827 texto principal */
-    /* Superficies blancas: cards, sidebar, topbar */
+    --background: 216 43% 96%;
+    --foreground: 223 32% 26%;
     --card: 0 0% 100%;
-    --card-foreground: 222 47% 11%;
+    --card-foreground: 223 32% 26%;
     --popover: 0 0% 100%;
-    --popover-foreground: 222 47% 11%;
-    /* Verde de marca (#22C55E): nav activo, botones primarios, chart */
-    --primary: 142 71% 45%;
+    --popover-foreground: 223 32% 26%;
+    /* Teal deep enough for readable text: buttons #12A88A, text/links #0B8A72 (AA on white). */
+    --primary: 168 81% 36%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 214 27% 95%;
-    --secondary-foreground: 222 47% 11%;
-    --muted: 214 27% 95%;
-    --muted-foreground: 220 9% 46%; /* #6B7280 texto secundario */
-    --accent: 142 60% 95%; /* hover suave verdoso */
-    --accent-foreground: 142 71% 30%;
-    --destructive: 0 84.2% 60.2%;
+    --secondary: 216 30% 95%;
+    --secondary-foreground: 223 32% 26%;
+    --muted: 216 30% 94%;
+    --muted-foreground: 221 24% 42%;
+    --accent: 168 60% 94%;
+    --accent-foreground: 168 85% 22%;
+    --destructive: 0 80% 58%;
     --destructive-foreground: 0 0% 100%;
-    --border: 214 20% 88%;
-    --input: 214 20% 88%;
-    --ring: 142 71% 45%;
+    /* Cards are borderless (hairline transparent), but controls inside dialogs need a
+       clearly visible edge on white, so border/input are a few steps darker. */
+    --border: 216 22% 84%;
+    --input: 216 22% 80%;
+    --ring: 168 81% 36%;
     --radius: 0.75rem;
+
+    /* surfaces */
+    --surface: rgb(255 255 255);
+    --hairline: rgb(0 0 0 / 0);
+    --overlay: rgb(46 58 89 / 0.35);
+    --overlay-blur: 4px;
+    --sidebar: rgb(255 255 255);
+    --app-bg-image: radial-gradient(620px 520px at -6% 8%, rgb(94 214 166 / 0.55), transparent 62%),
+      radial-gradient(520px 520px at -2% 102%, rgb(165 166 246 / 0.5), transparent 62%),
+      radial-gradient(520px 420px at 102% 96%, rgb(94 214 166 / 0.45), transparent 62%),
+      radial-gradient(320px 320px at 101% 26%, rgb(200 210 225 / 0.6), transparent 70%);
+
+    /* shape */
+    --radius-control: 0.625rem;
+    --radius-card: 1rem;
+    --radius-panel: 1rem;
+    --radius-pill: 0.625rem;
+    --radius-badge: 9999px;
+
+    /* elevation */
+    --shadow-card: 0 8px 30px rgb(43 74 138 / 0.06);
+    --shadow-float: 0 16px 48px rgb(43 74 138 / 0.14);
+    --shadow-button: none;
+    --shadow-nav-active: none;
+
+    /* type & layout */
+    --font-sans: 'Open Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto,
+      Helvetica, Arial, sans-serif;
+    --title-size: 1.625rem;
+    --title-weight: 600;
+    --title-tracking: 0em;
+    --control-height: 2.75rem;
+    --button-height: 2.5rem;
+    --sidebar-width: 16rem;
+    --sidebar-gap: 0.75rem;
+    --sidebar-radius: 1rem;
+    --sidebar-shadow: var(--shadow-card);
+
+    /* navigation */
+    --nav-active-bg: rgb(18 168 138 / 0.14);
+    --nav-active-fg: #0b7a65;
+
+    /* links */
+    --link: #0b8a72;
+    --link-hover: #076654;
+
+    /* metric tints (icon chips: bg / fg / border) */
+    --tint-blue-bg: #eaf2fd;
+    --tint-blue-fg: #2f6fc4;
+    --tint-blue-border: transparent;
+    --tint-beige-bg: #fcf6df;
+    --tint-beige-fg: #a67c00;
+    --tint-beige-border: transparent;
+    --tint-green-bg: #e9f8f1;
+    --tint-green-fg: #15875b;
+    --tint-green-border: transparent;
+    --tint-orange-bg: #fdede8;
+    --tint-orange-fg: #d64545;
+    --tint-orange-border: transparent;
+    --tint-chip: rgb(255 255 255 / 0.9);
+
+    /* status palettes (badges, tags, callouts) */
+    --status-success-bg: #e3f5ec;
+    --status-success-fg: #146b48;
+    --status-success-border: transparent;
+    --status-warning-bg: #fcf3d6;
+    --status-warning-fg: #8a6500;
+    --status-warning-border: transparent;
+    --status-info-bg: #e6effc;
+    --status-info-fg: #2557a7;
+    --status-info-border: transparent;
+    --status-neutral-bg: #eef2f8;
+    --status-neutral-fg: #465878;
+    --status-neutral-border: transparent;
+    --status-danger-bg: #fbe6e6;
+    --status-danger-fg: #b83232;
+    --status-danger-border: transparent;
+    --status-purple-bg: #ecebfb;
+    --status-purple-fg: #5450b8;
+    --status-purple-border: transparent;
+    --status-teal-bg: #dff3f0;
+    --status-teal-fg: #0b7a65;
+    --status-teal-border: transparent;
   }
 
   .dark {
-    /* Tema dark: navy profundo (familia #000A29 / #101B3E del spec) */
-    --background: 226 65% 8%; /* canvas, el más oscuro */
-    --foreground: 220 30% 94%;
-    --card: 224 62% 15%; /* superficies: sidebar, cards, topbar */
-    --card-foreground: 220 30% 94%;
-    --popover: 224 62% 15%;
-    --popover-foreground: 220 30% 94%;
-    --primary: 142 71% 45%; /* verde de marca, igual que light */
-    --primary-foreground: 0 0% 100%;
-    --secondary: 226 50% 20%;
-    --secondary-foreground: 220 30% 94%;
-    --muted: 226 50% 20%;
-    --muted-foreground: 222 20% 68%;
-    --accent: 226 50% 22%;
-    --accent-foreground: 220 30% 94%;
-    --destructive: 0 72% 51%;
+    --background: 222 38% 13%;
+    --foreground: 216 30% 92%;
+    --card: 222 37% 19%;
+    --card-foreground: 216 30% 92%;
+    --popover: 222 36% 22%;
+    --popover-foreground: 216 30% 92%;
+    --primary: 168 70% 48%;
+    --primary-foreground: 168 80% 8%;
+    --secondary: 222 30% 26%;
+    --secondary-foreground: 216 30% 92%;
+    --muted: 222 30% 26%;
+    --muted-foreground: 218 20% 68%;
+    --accent: 168 40% 22%;
+    --accent-foreground: 168 70% 70%;
+    --destructive: 0 80% 62%;
     --destructive-foreground: 0 0% 100%;
-    --border: 226 42% 23%;
-    --input: 226 42% 24%;
-    --ring: 142 71% 45%;
+    --border: 222 28% 28%;
+    --input: 222 28% 30%;
+    --ring: 168 70% 48%;
+
+    --surface: hsl(222 37% 19%);
+    --hairline: rgb(0 0 0 / 0);
+    --overlay: rgb(5 10 25 / 0.6);
+    --sidebar: hsl(222 37% 19%);
+    --app-bg-image: radial-gradient(620px 520px at -6% 8%, rgb(94 214 166 / 0.22), transparent 62%),
+      radial-gradient(520px 520px at -2% 102%, rgb(165 166 246 / 0.22), transparent 62%),
+      radial-gradient(520px 420px at 102% 96%, rgb(94 214 166 / 0.18), transparent 62%);
+
+    --shadow-card: 0 8px 30px rgb(0 0 0 / 0.3);
+    --shadow-float: 0 16px 48px rgb(0 0 0 / 0.5);
+
+    --nav-active-bg: rgb(23 195 163 / 0.18);
+    --nav-active-fg: #5fd3a6;
+
+    --link: #5fd3a6;
+    --link-hover: #8fe6c4;
+
+    --tint-blue-bg: rgb(124 182 240 / 0.16);
+    --tint-blue-fg: #9cc7f5;
+    --tint-beige-bg: rgb(242 201 76 / 0.16);
+    --tint-beige-fg: #f2c94c;
+    --tint-green-bg: rgb(95 211 166 / 0.16);
+    --tint-green-fg: #7fe0b8;
+    --tint-orange-bg: rgb(242 107 107 / 0.16);
+    --tint-orange-fg: #f59a9a;
+    --tint-chip: rgb(255 255 255 / 0.08);
+
+    --status-success-bg: rgb(95 211 166 / 0.16);
+    --status-success-fg: #7fe0b8;
+    --status-warning-bg: rgb(242 201 76 / 0.16);
+    --status-warning-fg: #f2c94c;
+    --status-info-bg: rgb(124 182 240 / 0.16);
+    --status-info-fg: #9cc7f5;
+    --status-neutral-bg: rgb(255 255 255 / 0.08);
+    --status-neutral-fg: #c5cee0;
+    --status-danger-bg: rgb(242 107 107 / 0.16);
+    --status-danger-fg: #f59a9a;
+    --status-purple-bg: rgb(165 166 246 / 0.16);
+    --status-purple-fg: #c2c3fa;
+    --status-teal-bg: rgb(23 195 163 / 0.16);
+    --status-teal-fg: #5fd3a6;
   }
 }
 
 @layer base {
+  html {
+    background-color: hsl(var(--background));
+  }
+  /* Scrollbars: thin, rounded, tinted from the theme. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--muted-foreground) / 0.35) transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  *::-webkit-scrollbar-thumb {
+    background-color: hsl(var(--muted-foreground) / 0.3);
+    border-radius: 9999px;
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    background-color: hsl(var(--muted-foreground) / 0.55);
+  }
+  *::-webkit-scrollbar-corner {
+    background: transparent;
+  }
   body {
     background-color: hsl(var(--background));
+    background-image: var(--app-bg-image);
+    background-attachment: fixed;
+    background-size: cover;
     color: hsl(var(--foreground));
-    font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI',
-      Roboto, Helvetica, Arial, sans-serif;
+    font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+@layer components {
+  /* Standard card surface. */
+  .surface {
+    @apply rounded-card border border-hairline bg-surface text-card-foreground shadow-card;
+  }
+  /* Larger panel (charts). */
+  .panel {
+    @apply rounded-panel border border-hairline bg-surface text-card-foreground shadow-card;
+  }
+  /* Inline text link (client/project/invoice names in tables). */
+  .link {
+    @apply font-medium text-link transition-colors hover:text-link-hover hover:underline;
+  }
+  /* Page title. */
+  .page-title {
+    font-size: var(--title-size);
+    font-weight: var(--title-weight);
+    letter-spacing: var(--title-tracking);
+    line-height: 1.15;
   }
 }

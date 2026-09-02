@@ -46,9 +46,9 @@ function Calendar({
         ),
         // Selected day: solid primary pill, kept on hover/focus.
         selected:
-          "rounded-md bg-primary text-primary-foreground [&>button]:hover:bg-primary [&>button]:hover:text-primary-foreground [&>button]:focus-visible:bg-primary",
+          "rounded-control bg-primary text-primary-foreground [&>button]:hover:bg-primary [&>button]:hover:text-primary-foreground [&>button]:focus-visible:bg-primary",
         // Today: outlined + bold so it stands out even when another day is selected.
-        today: "rounded-md font-semibold [&>button]:font-semibold [&>button]:ring-2 [&>button]:ring-inset [&>button]:ring-primary/70",
+        today: "rounded-control font-semibold [&>button]:font-semibold [&>button]:ring-2 [&>button]:ring-inset [&>button]:ring-primary/70",
         outside: "text-muted-foreground opacity-40",
         disabled: "text-muted-foreground opacity-40",
         range_start: "rounded-l-md bg-primary text-primary-foreground",

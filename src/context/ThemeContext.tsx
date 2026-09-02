@@ -26,6 +26,8 @@ export const ThemeProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     const root = document.documentElement;
     root.classList.toggle('dark', theme === 'dark');
     window.localStorage.setItem(STORAGE_KEY, theme);
+    // Leftover from the design exploration phase; harmless but keep storage tidy.
+    window.localStorage.removeItem('ui-variant');
   }, [theme]);
 
   const setTheme = (t: Theme) => setThemeState(t);

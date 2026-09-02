@@ -12,53 +12,38 @@ interface StatCardProps {
   hint?: string;
 }
 
-const TINTS: Record<StatTint, { bg: string; border: string; icon: string }> = {
-  blue: {
-    bg: 'bg-[#DBEAFE] dark:bg-[#16294D]',
-    border: 'border-[#BBD3FB] dark:border-[#244272]',
-    icon: 'text-brand-blue dark:text-blue-300',
-  },
-  beige: {
-    bg: 'bg-[#FCEBD2] dark:bg-[#33270F]',
-    border: 'border-[#F2D6AE] dark:border-[#574521]',
-    icon: 'text-brand-orange dark:text-orange-300',
-  },
-  green: {
-    bg: 'bg-[#CFF6DD] dark:bg-[#10301F]',
-    border: 'border-[#A7E9BE] dark:border-[#1E5236]',
-    icon: 'text-green-600 dark:text-green-400',
-  },
-  orange: {
-    bg: 'bg-[#FFE2C7] dark:bg-[#35240F]',
-    border: 'border-[#FBCDA0] dark:border-[#5A3D1E]',
-    icon: 'text-brand-orange dark:text-orange-300',
-  },
+// The card itself is a plain surface; the tint (design tokens --tint-*) colors
+// only the icon chip, so metrics stay compact and consistent with the rest of the UI.
+const TINTS: Record<StatTint, string> = {
+  blue: 'bg-tint-blue-bg text-tint-blue-fg border-tint-blue-border',
+  beige: 'bg-tint-beige-bg text-tint-beige-fg border-tint-beige-border',
+  green: 'bg-tint-green-bg text-tint-green-fg border-tint-green-border',
+  orange: 'bg-tint-orange-bg text-tint-orange-fg border-tint-orange-border',
 };
 
-/**
- * Tarjeta de métrica estilo dashboard: tint de color, icono en círculo blanco,
- * número grande y label. Datos reales — sin CTA decorativo.
- */
-const StatCard: React.FC<StatCardProps> = ({ label, value, icon: Icon, tint = 'blue', hint }) => {
-  const t = TINTS[tint];
-  return (
-    <div className={cn('rounded-3xl border p-5 shadow-soft', t.bg, t.border)}>
-      <div className="flex items-start justify-between">
-        <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white shadow-sm dark:bg-white/10">
-          <Icon className={cn('h-6 w-6', t.icon)} />
-        </span>
-        {hint && (
-          <span className="rounded-full bg-white/70 px-2.5 py-1 text-xs font-semibold text-foreground/70 dark:bg-white/10">
-            {hint}
-          </span>
-        )}
-      </div>
-      <div className="mt-5">
-        <div className="text-3xl font-bold leading-tight text-foreground">{value}</div>
-        <p className="mt-1 text-sm font-medium text-muted-foreground">{label}</p>
+/** Compact metric card: tinted icon chip, big number, label and an optional hint pill. */
+const StatCard: React.FC<StatCardProps> = ({ label, value, icon: Icon, tint = 'blue', hint }) => (
+  <div className="surface flex items-center gap-4 p-4">
+    <span
+      className={cn(
+        'flex h-11 w-11 shrink-0 items-center justify-center rounded-control border',
+        TINTS[tint]
+      )}
+    >
+      <Icon className="h-5 w-5" />
+    </span>
+    <div className="min-w-0 flex-1">
+      <p className="truncate text-sm font-medium text-muted-foreground">{label}</p>
+      <div className="mt-0.5 text-2xl font-bold leading-tight tracking-tight text-foreground">
+        {value}
       </div>
     </div>
-  );
-};
+    {hint && (
+      <span className="shrink-0 self-start rounded-badge bg-muted px-2 py-0.5 text-xs font-semibold text-muted-foreground">
+        {hint}
+      </span>
+    )}
+  </div>
+);
 
 export default StatCard;

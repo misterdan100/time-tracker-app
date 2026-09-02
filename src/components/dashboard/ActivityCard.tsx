@@ -9,15 +9,15 @@ interface ActivityCardProps {
   title: string;
   subtitle: string;
   hours: number;
-  /** Color del proyecto, para el chip de fecha */
+  /** Project color (data, not theme) for the date chip. */
   accent?: string;
-  /** Ruta a la que enlaza el botón circular (detalle de proyecto) */
+  /** Route for the row's action button (project detail). */
   to: string;
 }
 
 /**
- * Fila de actividad: caja de fecha + contenido (proyecto/cliente) + horas + acción
- * circular que enlaza al detalle del proyecto.
+ * Activity row: date chip + project/client + hours + a round action linking to the project.
+ * The project color is user data and stays inline; everything else uses design tokens.
  */
 const ActivityCard: React.FC<ActivityCardProps> = ({
   date,
@@ -28,10 +28,10 @@ const ActivityCard: React.FC<ActivityCardProps> = ({
   to,
 }) => {
   return (
-    <div className="flex items-center gap-4 rounded-2xl border border-border/60 bg-card p-3 shadow-soft sm:p-4">
-      {/* Fecha */}
+    <div className="surface flex items-center gap-4 p-3 sm:p-4">
+      {/* Date */}
       <div
-        className="flex h-14 w-14 shrink-0 flex-col items-center justify-center rounded-xl"
+        className="flex h-14 w-14 shrink-0 flex-col items-center justify-center rounded-control"
         style={{ backgroundColor: `${accent}1A` }}
       >
         <span className="text-xl font-bold leading-none" style={{ color: accent }}>
@@ -42,9 +42,9 @@ const ActivityCard: React.FC<ActivityCardProps> = ({
         </span>
       </div>
 
-      {/* Contenido */}
+      {/* Content */}
       <div className="min-w-0 flex-1">
-        <Link to={to} className="block truncate font-semibold text-foreground hover:text-green-700 dark:hover:text-green-400">
+        <Link to={to} className="block truncate font-semibold text-foreground transition-colors hover:text-link">
           {title}
         </Link>
         <p className="mt-0.5 flex items-center gap-1.5 truncate text-sm text-muted-foreground">
@@ -53,17 +53,17 @@ const ActivityCard: React.FC<ActivityCardProps> = ({
         </p>
       </div>
 
-      {/* Horas */}
+      {/* Hours */}
       <div className="hidden shrink-0 text-right sm:block">
         <p className="text-lg font-bold tabular-nums text-foreground">{hours}h</p>
         <p className="text-xs text-muted-foreground">logged</p>
       </div>
 
-      {/* Acción */}
+      {/* Action */}
       <Link
         to={to}
         aria-label={`Open ${title}`}
-        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-green-soft text-brand-green transition-transform hover:scale-105 dark:bg-green-500/15 dark:text-green-400"
+        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-pill bg-nav-active text-nav-active-fg transition-transform hover:scale-105"
       >
         <ChevronRight className="h-5 w-5" />
       </Link>

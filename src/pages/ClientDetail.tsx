@@ -30,6 +30,8 @@ import { SortableHead } from '../components/ui/sortable-head';
 import { dateSortValue, SortAccessors, useSort } from '../lib/sort';
 import { workTypesLabel } from '../lib/workTypes';
 import WorkTypeTags from '../components/project/WorkTypeTags';
+import ProjectStatusBadge from '../components/project/ProjectStatusBadge';
+import PageHeader from '../components/layout/PageHeader';
 import {
   ArrowLeft,
   Building2,
@@ -168,27 +170,23 @@ const ClientDetail: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3 min-w-0">
-          <Button variant="ghost" size="icon" className="shrink-0" onClick={() => navigate('/clients')}>
-            <ArrowLeft className="w-4 h-4" />
-          </Button>
-          <div className="min-w-0">
-            <h1 className="text-2xl font-bold text-foreground truncate sm:text-3xl">{client.companyName}</h1>
-            <p className="text-muted-foreground">Client Details</p>
-          </div>
-        </div>
-        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
-          <Button onClick={handleNewInvoice} className="w-full gap-2 sm:w-auto">
-            <Plus className="w-4 h-4" />
-            New Invoice
-          </Button>
-          <Button variant="outline" onClick={handleEdit} className="w-full gap-2 sm:w-auto">
-            <Pencil className="w-4 h-4" />
-            Edit Client
-          </Button>
-        </div>
-      </div>
+      <PageHeader
+        title={client.companyName}
+        subtitle="Client Details"
+        onBack={() => navigate('/clients')}
+        actions={
+          <>
+            <Button onClick={handleNewInvoice} className="w-full gap-2 sm:w-auto">
+              <Plus className="w-4 h-4" />
+              New Invoice
+            </Button>
+            <Button variant="outline" onClick={handleEdit} className="w-full gap-2 sm:w-auto">
+              <Pencil className="w-4 h-4" />
+              Edit Client
+            </Button>
+          </>
+        }
+      />
 
       <div className="grid gap-6 md:grid-cols-3">
         <Card>
@@ -344,7 +342,7 @@ const ClientDetail: React.FC = () => {
                     <TableCell className="font-medium">
                       <Link
                         to={`/invoice/${invoice.id}`}
-                        className="font-medium text-green-700 hover:text-green-800 hover:underline dark:text-green-400 dark:hover:text-green-300"
+                        className="link"
                       >
                         #{formatInvoiceNumber(invoice.invoiceNumber)}
                       </Link>
@@ -443,7 +441,7 @@ const ClientDetail: React.FC = () => {
                     <TableCell className="font-medium">
                       <Link
                         to={`/project/${project.id}`}
-                        className="font-medium text-green-700 hover:text-green-800 hover:underline dark:text-green-400 dark:hover:text-green-300"
+                        className="link"
                       >
                         {project.name}
                       </Link>
@@ -454,17 +452,7 @@ const ClientDetail: React.FC = () => {
                       <WorkTypeTags types={project.workTypes} />
                     </TableCell>
                     <TableCell>
-                      <span
-                        className={`px-2 py-1 rounded-full text-xs font-medium ${
-                          project.status === 'Active'
-                            ? 'bg-green-100 text-green-800 dark:bg-green-500/15 dark:text-green-300'
-                            : project.status === 'Paused'
-                            ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-500/15 dark:text-yellow-300'
-                            : 'bg-gray-100 text-gray-800 dark:bg-white/10 dark:text-gray-300'
-                        }`}
-                      >
-                        {project.status}
-                      </span>
+                      <ProjectStatusBadge status={project.status} />
                     </TableCell>
                     <TableCell className="font-medium">{getProjectHours(project.id).toFixed(2)}h</TableCell>
                   </TableRow>

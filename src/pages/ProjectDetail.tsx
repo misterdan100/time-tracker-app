@@ -20,6 +20,7 @@ import { TimeEntry } from '../types';
 import { SortableHead } from '../components/ui/sortable-head';
 import { dateSortValue, SortAccessors, useSort } from '../lib/sort';
 import WorkTypeTags from '../components/project/WorkTypeTags';
+import PageHeader from '../components/layout/PageHeader';
 
 type EntrySortKey = 'date' | 'hours';
 
@@ -107,21 +108,17 @@ const ProjectDetail: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3 min-w-0">
-          <Button variant="ghost" size="icon" className="shrink-0" onClick={() => navigate('/projects')}>
-            <ArrowLeft className="w-4 h-4" />
+      <PageHeader
+        title={project.name}
+        subtitle="Project Details"
+        onBack={() => navigate('/projects')}
+        actions={
+          <Button onClick={handleEdit} className="gap-2 w-full sm:w-auto">
+            <Pencil className="w-4 h-4" />
+            Edit Project
           </Button>
-          <div className="min-w-0">
-            <h1 className="text-2xl font-bold text-foreground truncate sm:text-3xl">{project.name}</h1>
-            <p className="text-muted-foreground">Project Details</p>
-          </div>
-        </div>
-        <Button onClick={handleEdit} className="gap-2 w-full sm:w-auto">
-          <Pencil className="w-4 h-4" />
-          Edit Project
-        </Button>
-      </div>
+        }
+      />
 
       <div className="grid gap-6 md:grid-cols-3">
         <Card>

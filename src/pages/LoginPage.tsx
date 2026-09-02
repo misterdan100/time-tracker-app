@@ -66,7 +66,7 @@ const LoginPage: React.FC = () => {
           />
         </div>
         {error && (
-          <div className="text-sm text-destructive bg-destructive/10 p-3 rounded-md">
+          <div className="text-sm text-destructive bg-destructive/10 p-3 rounded-control">
             {error}
           </div>
         )}

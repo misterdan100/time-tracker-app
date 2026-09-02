@@ -15,7 +15,9 @@ import {
 import { IdType, Profile as ProfileType } from '../types';
 import { emptyProfile, isProfileComplete, missingProfileFields } from '../lib/profileUtils';
 import { stripAccents } from '../lib/text';
-import { AlertTriangle, CheckCircle2, UserCircle } from 'lucide-react';
+import { UserCircle } from 'lucide-react';
+import PageHeader from '../components/layout/PageHeader';
+import { Callout } from '../components/ui/callout';
 
 const ID_TYPES: IdType[] = ['C.C.', 'NIT', 'ID'];
 
@@ -78,33 +80,27 @@ const Profile: React.FC = () => {
 
   return (
     <form onSubmit={handleSave} className="space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3">
-          <UserCircle className="h-7 w-7 text-muted-foreground" />
-          <div>
-            <h1 className="text-2xl font-bold text-foreground sm:text-3xl">Profile</h1>
-            <p className="text-muted-foreground">Your studio details used on every invoice</p>
-          </div>
-        </div>
-        <Button type="submit" disabled={saving} className="w-full sm:w-auto">
-          {saving ? 'Saving…' : 'Save profile'}
-        </Button>
-      </div>
+      <PageHeader
+        title="Profile"
+        subtitle="Your studio details used on every invoice"
+        leading={<UserCircle className="h-7 w-7 shrink-0 text-muted-foreground" />}
+        actions={
+          <Button type="submit" disabled={saving} className="w-full sm:w-auto">
+            {saving ? 'Saving…' : 'Save profile'}
+          </Button>
+        }
+      />
 
       {/* Completeness banner (reflects the SAVED profile, which gates invoicing) */}
       {complete ? (
-        <div className="flex items-center gap-2 rounded-2xl border border-green-200 bg-green-50 px-4 py-3 text-sm font-medium text-green-800 dark:border-green-500/30 dark:bg-green-500/10 dark:text-green-300">
-          <CheckCircle2 className="h-4 w-4 shrink-0" />
+        <Callout tone="success" className="font-medium">
           Profile complete — you can create invoices.
-        </div>
+        </Callout>
       ) : (
-        <div className="flex items-start gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-          <span>
-            <span className="font-medium">Complete your profile to create invoices.</span> Missing:{' '}
-            {missing.join(', ')}. {profile ? 'Remember to save your changes.' : ''}
-          </span>
-        </div>
+        <Callout tone="warning">
+          <span className="font-medium">Complete your profile to create invoices.</span> Missing:{' '}
+          {missing.join(', ')}. {profile ? 'Remember to save your changes.' : ''}
+        </Callout>
       )}
 
       {/* Studio */}

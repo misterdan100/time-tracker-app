@@ -6,6 +6,7 @@ import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import AuthCard from '../components/auth/AuthCard';
+import { Callout } from '../components/ui/callout';
 
 const ForgotPasswordPage: React.FC = () => {
   const [email, setEmail] = useState('');
@@ -39,13 +40,10 @@ const ForgotPasswordPage: React.FC = () => {
     return (
       <AuthCard title="Arq Time" subtitle="Check your inbox">
         <div className="space-y-4">
-          <div className="flex items-start gap-3 rounded-2xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800 dark:border-green-500/30 dark:bg-green-500/10 dark:text-green-300">
-            <MailCheck className="mt-0.5 h-4 w-4 shrink-0" />
-            <span>
-              If an account exists for <span className="font-medium">{email}</span>, we sent a link
-              to reset your password. The link expires in 1 hour.
-            </span>
-          </div>
+          <Callout tone="success" icon={MailCheck}>
+            If an account exists for <span className="font-medium">{email}</span>, we sent a link
+            to reset your password. The link expires in 1 hour.
+          </Callout>
           <p className="text-sm text-muted-foreground">
             Nothing in your inbox? Check the spam folder, then{' '}
             <button
@@ -88,7 +86,7 @@ const ForgotPasswordPage: React.FC = () => {
           />
         </div>
         {error && (
-          <div className="text-sm text-destructive bg-destructive/10 p-3 rounded-md">{error}</div>
+          <div className="text-sm text-destructive bg-destructive/10 p-3 rounded-control">{error}</div>
         )}
         <Button type="submit" className="w-full" disabled={submitting}>
           {submitting ? 'Sending...' : 'Send reset link'}

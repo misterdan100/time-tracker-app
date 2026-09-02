@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
-import { AlertTriangle, ArrowLeft } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
+import { Callout } from '../components/ui/callout';
 import { useAuth } from '../context/AuthContext';
 import { Button } from '../components/ui/button';
 import { Label } from '../components/ui/label';
@@ -69,10 +70,9 @@ const ResetPasswordPage: React.FC = () => {
     return (
       <AuthCard title="Arq Time" subtitle="Reset your password">
         <div className="space-y-4">
-          <div className="flex items-start gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-            <span>{linkError ?? 'This reset link is invalid or has expired.'}</span>
-          </div>
+          <Callout tone="warning">
+            {linkError ?? 'This reset link is invalid or has expired.'}
+          </Callout>
           <Button asChild className="w-full">
             <Link to="/forgot-password">Request a new link</Link>
           </Button>
@@ -114,7 +114,7 @@ const ResetPasswordPage: React.FC = () => {
           />
         </div>
         {error && (
-          <div className="text-sm text-destructive bg-destructive/10 p-3 rounded-md">{error}</div>
+          <div className="text-sm text-destructive bg-destructive/10 p-3 rounded-control">{error}</div>
         )}
         <Button type="submit" className="w-full" disabled={submitting}>
           {submitting ? 'Updating...' : 'Update password'}

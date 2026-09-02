@@ -29,6 +29,8 @@ import {
 import { SortableHead } from '../components/ui/sortable-head';
 import { dateSortValue, SortAccessors, useSort } from '../lib/sort';
 import StatCard from '../components/dashboard/StatCard';
+import PageHeader from '../components/layout/PageHeader';
+import { Callout } from '../components/ui/callout';
 import InvoiceStatusBadge from '../components/invoice/InvoiceStatusBadge';
 import InvoiceDialog from '../components/dialogs/InvoiceDialog';
 import { downloadInvoice } from '../lib/downloadInvoice';
@@ -44,7 +46,6 @@ import {
   Trash2,
   Eye,
   Pencil,
-  AlertTriangle,
   FileCheck,
   CheckCircle2,
   X,
@@ -232,32 +233,33 @@ const Invoices: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground sm:text-3xl">Invoices</h1>
-          <p className="text-muted-foreground">Bill clients for hours worked</p>
-        </div>
-        <Button onClick={openNew} className="w-full gap-2 sm:w-auto">
-          <Plus className="h-4 w-4" />
-          New Invoice
-        </Button>
-      </div>
+      <PageHeader
+        title="Invoices"
+        subtitle="Bill clients for hours worked"
+        actions={
+          <Button onClick={openNew} className="w-full gap-2 sm:w-auto">
+            <Plus className="h-4 w-4" />
+            New Invoice
+          </Button>
+        }
+      />
 
       {!profileComplete && (
-        <div className="flex flex-col gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300 sm:flex-row sm:items-center sm:justify-between">
-          <span className="flex items-center gap-2">
-            <AlertTriangle className="h-4 w-4 shrink-0" />
-            Complete your studio profile to start creating invoices.
-          </span>
-          <Button
-            variant="outline"
-            size="sm"
-            className="w-full sm:w-auto"
-            onClick={() => navigate('/profile')}
-          >
-            Go to profile
-          </Button>
-        </div>
+        <Callout
+          tone="warning"
+          action={
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full sm:w-auto"
+              onClick={() => navigate('/profile')}
+            >
+              Go to profile
+            </Button>
+          }
+        >
+          Complete your studio profile to start creating invoices.
+        </Callout>
       )}
 
       <div className="grid gap-4 sm:grid-cols-3">
@@ -319,7 +321,7 @@ const Invoices: React.FC = () => {
         <div
           role="toolbar"
           aria-label="Bulk actions"
-          className="flex flex-col gap-3 rounded-2xl border border-primary/30 bg-primary/5 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+          className="flex flex-col gap-3 rounded-card border border-primary/30 bg-primary/5 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
         >
           <div className="flex items-center gap-3">
             <span className="text-sm font-semibold text-foreground">
@@ -377,7 +379,7 @@ const Invoices: React.FC = () => {
         </div>
       )}
 
-      <div className="overflow-hidden rounded-2xl border border-border/60 bg-card shadow-soft">
+      <div className="surface overflow-hidden">
         <Table>
           <TableHeader>
             <TableRow>
@@ -440,7 +442,7 @@ const Invoices: React.FC = () => {
                   <TableCell className="font-medium">
                     <Link
                       to={`/invoice/${invoice.id}`}
-                      className="font-medium text-green-700 hover:text-green-800 hover:underline dark:text-green-400 dark:hover:text-green-300"
+                      className="link"
                     >
                       #{formatInvoiceNumber(invoice.invoiceNumber)}
                     </Link>
@@ -448,7 +450,7 @@ const Invoices: React.FC = () => {
                   <TableCell className="hidden md:table-cell">
                     <Link
                       to={`/client/${invoice.clientId}`}
-                      className="font-medium text-green-700 hover:text-green-800 hover:underline dark:text-green-400 dark:hover:text-green-300"
+                      className="link"
                     >
                       {getClientName(invoice.clientId)}
                     </Link>

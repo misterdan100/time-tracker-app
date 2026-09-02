@@ -328,7 +328,7 @@ const InvoiceDialog: React.FC<InvoiceDialogProps> = ({
                 Enter a whole number (1 or higher).
               </p>
             ) : numberGap ? (
-              <p className="-mt-2 text-xs font-medium text-amber-600 dark:text-amber-400">
+              <p className="-mt-2 text-xs font-medium text-status-warning-fg">
                 Skipping ahead — the last invoice for this client was{' '}
                 #{formatInvoiceNumber(maxExisting)}. You can still use #{formatInvoiceNumber(enteredNum)}.
               </p>

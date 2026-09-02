@@ -53,7 +53,7 @@ function AppContent() {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden bg-background">
+    <div className="flex h-screen overflow-hidden">
       <Sidebar
         onOpenTimeEntry={() => setTimeEntryOpen(true)}
         open={sidebarOpen}
@@ -61,8 +61,8 @@ function AppContent() {
       />
       <div className="flex flex-1 flex-col overflow-hidden p-3 pl-0 max-lg:pl-3">
         <main className="flex flex-1 flex-col gap-4 overflow-y-auto">
-          {/* Header solo en móvil para abrir el sidebar */}
-          <header className="flex items-center gap-3 rounded-2xl border border-border/60 bg-card px-3 py-2 shadow-soft lg:hidden">
+          {/* Mobile-only header to open the sidebar drawer */}
+          <header className="surface flex items-center gap-3 px-3 py-2 lg:hidden">
             <Button
               variant="ghost"
               size="icon"

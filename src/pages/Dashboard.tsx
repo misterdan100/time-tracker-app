@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { Button } from '../components/ui/button';
 import StatCard from '../components/dashboard/StatCard';
+import PageHeader from '../components/layout/PageHeader';
 import ActivityCard from '../components/dashboard/ActivityCard';
 import { Clock, Building2, Users, Calendar, Sparkles, ChevronLeft, ChevronRight } from 'lucide-react';
 import { format, startOfMonth, endOfMonth, isWithinInterval, eachDayOfInterval, parseISO, addDays, subDays, startOfDay } from 'date-fns';
@@ -80,17 +81,16 @@ const Dashboard: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight text-foreground">Dashboard</h1>
-          <p className="text-muted-foreground">Activity Overview</p>
-        </div>
-        <div className="flex items-center gap-2 rounded-full border border-green-200 bg-green-50 px-4 py-2 dark:border-green-500/30 dark:bg-green-500/10">
-          <Sparkles className="h-5 w-5 shrink-0 text-green-600 dark:text-green-400" />
-          <p className="text-sm font-semibold text-green-800 dark:text-green-300">{getDailyQuote()}</p>
-        </div>
-      </div>
+      <PageHeader
+        title="Dashboard"
+        subtitle="Activity Overview"
+        actions={
+          <div className="flex items-center gap-2 rounded-badge border border-status-success-border bg-status-success-bg px-4 py-2 text-status-success-fg">
+            <Sparkles className="h-5 w-5 shrink-0" />
+            <p className="text-sm font-semibold">{getDailyQuote()}</p>
+          </div>
+        }
+      />
 
       {/* Stat cards — métricas reales */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -121,7 +121,7 @@ const Dashboard: React.FC = () => {
       </div>
 
       {/* Chart */}
-      <div className="rounded-3xl border border-border/60 bg-card p-5 shadow-soft sm:p-6">
+      <div className="panel p-5 sm:p-6">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-lg font-bold text-foreground">Time by Day</h2>
@@ -172,7 +172,7 @@ const Dashboard: React.FC = () => {
                 border: '1px solid hsl(var(--border))',
                 backgroundColor: 'hsl(var(--card))',
                 color: 'hsl(var(--foreground))',
-                boxShadow: '0 10px 30px rgba(0,0,0,.12)',
+                boxShadow: 'var(--shadow-float)',
               }}
               labelStyle={{ color: 'hsl(var(--foreground))' }}
               itemStyle={{ color: 'hsl(var(--foreground))' }}
@@ -189,13 +189,13 @@ const Dashboard: React.FC = () => {
           <h2 className="text-lg font-bold text-foreground">Recent Activity</h2>
           <Link
             to="/projects"
-            className="text-sm font-semibold text-green-700 hover:text-green-800 hover:underline dark:text-green-400 dark:hover:text-green-300"
+            className="link text-sm font-semibold"
           >
             View All
           </Link>
         </div>
         {recentEntries.length === 0 ? (
-          <div className="rounded-2xl border border-border/60 bg-card p-8 text-center text-muted-foreground shadow-soft">
+          <div className="surface p-8 text-center text-muted-foreground">
             No time entries yet
           </div>
         ) : (

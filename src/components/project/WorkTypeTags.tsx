@@ -1,14 +1,20 @@
 import React from 'react';
 import { WorkType } from '../../types';
 import { cn } from '../../lib/utils';
+import { Badge, BADGE_TONE_CLASSES, type BadgeTone } from '../ui/badge';
 
-export const WORK_TYPE_STYLES: Record<WorkType, string> = {
-  Blueprints: 'bg-blue-100 text-blue-800 dark:bg-blue-500/15 dark:text-blue-300',
-  '3D Modeling': 'bg-purple-100 text-purple-800 dark:bg-purple-500/15 dark:text-purple-300',
-  'Site Visit': 'bg-orange-100 text-orange-800 dark:bg-orange-500/15 dark:text-orange-300',
-  Consulting: 'bg-teal-100 text-teal-800 dark:bg-teal-500/15 dark:text-teal-300',
-  Other: 'bg-gray-100 text-gray-800 dark:bg-white/10 dark:text-gray-300',
+export const WORK_TYPE_TONES: Record<WorkType, BadgeTone> = {
+  Blueprints: 'info',
+  '3D Modeling': 'purple',
+  'Site Visit': 'warning',
+  Consulting: 'teal',
+  Other: 'neutral',
 };
+
+/** Tone classes per work type (used by the project dialog chips). */
+export const WORK_TYPE_STYLES: Record<WorkType, string> = Object.fromEntries(
+  (Object.keys(WORK_TYPE_TONES) as WorkType[]).map((t) => [t, BADGE_TONE_CLASSES[WORK_TYPE_TONES[t]]])
+) as Record<WorkType, string>;
 
 interface WorkTypeTagsProps {
   types: WorkType[];
@@ -25,15 +31,9 @@ const WorkTypeTags: React.FC<WorkTypeTagsProps> = ({ types, className, emptyLabe
   return (
     <span className={cn('flex flex-wrap gap-1', className)}>
       {types.map((t) => (
-        <span
-          key={t}
-          className={cn(
-            'whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium',
-            WORK_TYPE_STYLES[t]
-          )}
-        >
+        <Badge key={t} tone={WORK_TYPE_TONES[t]}>
           {t}
-        </span>
+        </Badge>
       ))}
     </span>
   );
