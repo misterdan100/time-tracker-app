@@ -13,6 +13,7 @@ import {
   X,
   PanelLeftClose,
   PanelLeftOpen,
+  UsersRound,
 } from 'lucide-react';
 import { Button } from '../ui/button';
 import Logo from '../Logo';
@@ -41,7 +42,9 @@ const navItemClass = (active: boolean, collapsed: boolean) =>
 
 const Sidebar: React.FC<SidebarProps> = ({ onOpenTimeEntry, open, onClose }) => {
   const location = useLocation();
-  const { exportData, importData } = useApp();
+  // Members (and the admin while viewing a member) get the member menu: no Log Time until
+  // projects are assigned (next phase), no import/export.
+  const { exportData, importData, adminView } = useApp();
   const { logout } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -72,12 +75,18 @@ const Sidebar: React.FC<SidebarProps> = ({ onOpenTimeEntry, open, onClose }) => 
     }
   };
 
-  const navItems = [
-    { path: '/', label: 'Dashboard', icon: LayoutDashboard },
-    { path: '/clients', label: 'Clients', icon: Users },
-    { path: '/projects', label: 'Projects', icon: Building2 },
-    { path: '/invoices', label: 'Invoices', icon: FileText },
-  ];
+  const navItems = adminView
+    ? [
+        { path: '/', label: 'Dashboard', icon: LayoutDashboard },
+        { path: '/clients', label: 'Clients', icon: Users },
+        { path: '/projects', label: 'Projects', icon: Building2 },
+        { path: '/invoices', label: 'Invoices', icon: FileText },
+        { path: '/admin', label: 'Team', icon: UsersRound },
+      ]
+    : [
+        { path: '/', label: 'Dashboard', icon: LayoutDashboard },
+        { path: '/projects', label: 'Projects', icon: Building2 },
+      ];
 
   const footerButtonClass = (danger = false) =>
     cn(
@@ -161,20 +170,22 @@ const Sidebar: React.FC<SidebarProps> = ({ onOpenTimeEntry, open, onClose }) => 
         )}
 
         {/* Primary CTA */}
-        <Button
-          onClick={() => {
-            onOpenTimeEntry();
-            onClose();
-          }}
-          className={cn(
-            'mb-5 h-11 w-full justify-start gap-2',
-            collapsed && 'lg:w-11 lg:justify-center lg:self-center lg:px-0'
-          )}
-          aria-label="Log Time"
-        >
-          <Plus className="h-5 w-5 shrink-0" />
-          <span className={cn(collapsed && 'lg:hidden')}>Log Time</span>
-        </Button>
+        {adminView && (
+          <Button
+            onClick={() => {
+              onOpenTimeEntry();
+              onClose();
+            }}
+            className={cn(
+              'mb-5 h-11 w-full justify-start gap-2',
+              collapsed && 'lg:w-11 lg:justify-center lg:self-center lg:px-0'
+            )}
+            aria-label="Log Time"
+          >
+            <Plus className="h-5 w-5 shrink-0" />
+            <span className={cn(collapsed && 'lg:hidden')}>Log Time</span>
+          </Button>
+        )}
 
         {/* Navigation */}
         <nav className="min-h-0 flex-1 space-y-1.5 overflow-y-auto">
@@ -212,24 +223,28 @@ const Sidebar: React.FC<SidebarProps> = ({ onOpenTimeEntry, open, onClose }) => 
             <UserCircle className="h-5 w-5 shrink-0" />
             <span className={cn(collapsed && 'lg:hidden')}>Profile</span>
           </Link>
-          <Button
-            onClick={exportData}
-            variant="ghost"
-            title={collapsed ? 'Export JSON' : undefined}
-            className={footerButtonClass()}
-          >
-            <Download className="h-4 w-4 shrink-0" />
-            <span className={cn(collapsed && 'lg:hidden')}>Export JSON</span>
-          </Button>
-          <Button
-            onClick={() => fileInputRef.current?.click()}
-            variant="ghost"
-            title={collapsed ? 'Import JSON' : undefined}
-            className={footerButtonClass()}
-          >
-            <Upload className="h-4 w-4 shrink-0" />
-            <span className={cn(collapsed && 'lg:hidden')}>Import JSON</span>
-          </Button>
+          {adminView && (
+            <Button
+              onClick={exportData}
+              variant="ghost"
+              title={collapsed ? 'Export JSON' : undefined}
+              className={footerButtonClass()}
+            >
+              <Download className="h-4 w-4 shrink-0" />
+              <span className={cn(collapsed && 'lg:hidden')}>Export JSON</span>
+            </Button>
+          )}
+          {adminView && (
+            <Button
+              onClick={() => fileInputRef.current?.click()}
+              variant="ghost"
+              title={collapsed ? 'Import JSON' : undefined}
+              className={footerButtonClass()}
+            >
+              <Upload className="h-4 w-4 shrink-0" />
+              <span className={cn(collapsed && 'lg:hidden')}>Import JSON</span>
+            </Button>
+          )}
           <Button
             onClick={logout}
             variant="ghost"

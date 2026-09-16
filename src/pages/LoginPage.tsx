@@ -24,10 +24,15 @@ const LoginPage: React.FC = () => {
     }
 
     setSubmitting(true);
-    const { error: loginError } = await login(email, password);
+    const { error: loginError, code } = await login(email, password);
     setSubmitting(false);
     if (loginError) {
-      setError('Invalid email or password');
+      // Supabase checks deactivation before the password, so this shows even with a wrong password.
+      setError(
+        code === 'user_banned'
+          ? 'This account has been deactivated. Contact your administrator to regain access.'
+          : 'Invalid email or password'
+      );
     }
   };
 

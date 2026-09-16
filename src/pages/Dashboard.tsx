@@ -17,7 +17,7 @@ const motivationalQuotes = [
 ];
 
 const Dashboard: React.FC = () => {
-  const { clients, projects, timeEntries } = useApp();
+  const { clients, projects, timeEntries, adminView } = useApp();
 
   // Get daily motivational quote based on date
   const getDailyQuote = () => {
@@ -93,19 +93,23 @@ const Dashboard: React.FC = () => {
       />
 
       {/* Stat cards — métricas reales */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div
+        className={`grid grid-cols-1 gap-4 sm:grid-cols-2 ${adminView ? 'lg:grid-cols-4' : 'lg:grid-cols-3'}`}
+      >
         <StatCard
           tint="blue"
           icon={Clock}
           label="Hours this month"
           value={`${hoursThisMonth.toFixed(1)}h`}
         />
-        <StatCard
-          tint="beige"
-          icon={Building2}
-          label="Clients"
-          value={clients.length}
-        />
+        {adminView && (
+          <StatCard
+            tint="beige"
+            icon={Building2}
+            label="Clients"
+            value={clients.length}
+          />
+        )}
         <StatCard
           tint="green"
           icon={Users}

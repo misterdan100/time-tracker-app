@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { Menu } from 'lucide-react';
 import { AppProvider, useApp } from './context/AppContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -15,6 +15,9 @@ import ClientDetail from './pages/ClientDetail';
 import Invoices from './pages/Invoices';
 import InvoiceDetail from './pages/InvoiceDetail';
 import Profile from './pages/Profile';
+import AdminTeam from './pages/AdminTeam';
+import AccountDisabledPage from './pages/AccountDisabledPage';
+import ViewAsBanner from './components/layout/ViewAsBanner';
 import LoginPage from './pages/LoginPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
@@ -28,13 +31,13 @@ import { Toaster } from 'sonner';
 const AUTH_ROUTES = ['/forgot-password', '/reset-password'];
 
 function AppContent() {
-  const { projects, addTimeEntry } = useApp();
-  const { isAuthenticated, loading } = useAuth();
+  const { projects, addTimeEntry, adminView } = useApp();
+  const { isAuthenticated, loading, membership, membershipLoading, membershipError } = useAuth();
   const { pathname } = useLocation();
   const [timeEntryOpen, setTimeEntryOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  if (loading) {
+  if (loading || (isAuthenticated && membershipLoading)) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background text-muted-foreground">
         Loading...
@@ -50,6 +53,11 @@ function AppContent() {
         <Route path="*" element={<LoginPage />} />
       </Routes>
     );
+  }
+
+  // Signed in, but no active team account (or the role could not be loaded).
+  if (membershipError || !membership?.active) {
+    return <AccountDisabledPage />;
   }
 
   return (
@@ -73,16 +81,25 @@ function AppContent() {
             </Button>
             <Logo variant="full" className="h-7 w-auto" />
           </header>
+          <ViewAsBanner />
           <div className="mx-auto w-full max-w-6xl flex-1 px-1 pb-6 pt-2 lg:pt-4">
             <Routes>
               <Route path="/" element={<Dashboard />} />
-              <Route path="/clients" element={<Clients />} />
-              <Route path="/client/:id" element={<ClientDetail />} />
               <Route path="/projects" element={<Projects />} />
               <Route path="/project/:id" element={<ProjectDetail />} />
-              <Route path="/invoices" element={<Invoices />} />
-              <Route path="/invoice/:id" element={<InvoiceDetail />} />
               <Route path="/profile" element={<Profile />} />
+              {/* Members only see their assigned work; clients, invoices and the team are admin-only.
+                  While viewing a member, the admin gets that member's routes too. */}
+              {adminView && (
+                <>
+                  <Route path="/clients" element={<Clients />} />
+                  <Route path="/client/:id" element={<ClientDetail />} />
+                  <Route path="/invoices" element={<Invoices />} />
+                  <Route path="/invoice/:id" element={<InvoiceDetail />} />
+                  <Route path="/admin" element={<AdminTeam />} />
+                </>
+              )}
+              <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </div>
         </main>

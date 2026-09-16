@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
 import { toast } from 'sonner';
 import { AppState, Client, Invoice, Profile, Project, TimeEntry } from '../types';
 import { supabase } from '../lib/supabase';
@@ -16,6 +16,12 @@ export interface MutationOpts {
   silent?: boolean;
 }
 
+/** The team member whose data the admin is currently viewing (read-only). */
+export interface ViewAsTarget {
+  userId: string;
+  name: string;
+}
+
 interface AppContextType {
   clients: Client[];
   projects: Project[];
@@ -24,6 +30,17 @@ interface AppContextType {
   profile: Profile | null;
   cities: string[];
   loading: boolean;
+  /** Set while the admin is viewing a member's account. */
+  viewAs: ViewAsTarget | null;
+  /** True while viewing another account: every mutation is blocked. */
+  readOnly: boolean;
+  /**
+   * The admin working in their own account. Gates admin-only navigation and controls; while
+   * viewing a member the UI shows exactly what that member sees (read-only).
+   */
+  adminView: boolean;
+  startViewAs: (target: ViewAsTarget) => void;
+  stopViewAs: () => void;
   addClient: (client: Omit<Client, 'id'>) => Promise<void>;
   updateClient: (id: string, client: Partial<Client>) => Promise<void>;
   deleteClient: (id: string) => Promise<void>;
@@ -200,8 +217,16 @@ const profileToRow = (p: Profile): Record<string, unknown> => ({
 const citiesFromProjects = (projects: Project[]): string[] =>
   Array.from(new Set(projects.map((p) => p.city).filter(Boolean)));
 
+const READ_ONLY_MESSAGE = 'Read-only while viewing another account';
+
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const { isAuthenticated, userId } = useAuth();
+  const { isAuthenticated, userId, isAdmin } = useAuth();
+  // Not persisted: a reload or logout always returns the admin to their own data.
+  const [viewAs, setViewAs] = useState<ViewAsTarget | null>(null);
+  const effectiveViewAs = isAdmin && viewAs && viewAs.userId !== userId ? viewAs : null;
+  const dataOwnerId = effectiveViewAs?.userId ?? userId;
+  const readOnly = effectiveViewAs !== null;
+  const adminView = isAdmin && !readOnly;
   const [clients, setClients] = useState<Client[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [timeEntries, setTimeEntries] = useState<TimeEntry[]>([]);
@@ -210,15 +235,22 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [cities, setCities] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
 
-  const fetchAll = useCallback(async () => {
+  // Guards against a slow earlier response overwriting a newer one (e.g. switching accounts).
+  const fetchSeq = useRef(0);
+
+  // Always filter by owner explicitly: a lead can also READ their members' rows via RLS,
+  // so relying on RLS alone would mix accounts (and break the single-profile query).
+  const fetchAll = useCallback(async (ownerId: string) => {
+    const seq = ++fetchSeq.current;
     setLoading(true);
     const [clientsRes, projectsRes, entriesRes, invoicesRes, profileRes] = await Promise.all([
-      supabase.from('clients').select('*').order('created_at', { ascending: true }),
-      supabase.from('projects').select('*').order('created_at', { ascending: true }),
-      supabase.from('time_entries').select('*').order('date', { ascending: false }),
-      supabase.from('invoices').select('*').order('created_at', { ascending: false }),
-      supabase.from('profiles').select('*').maybeSingle(),
+      supabase.from('clients').select('*').eq('user_id', ownerId).order('created_at', { ascending: true }),
+      supabase.from('projects').select('*').eq('user_id', ownerId).order('created_at', { ascending: true }),
+      supabase.from('time_entries').select('*').eq('user_id', ownerId).order('date', { ascending: false }),
+      supabase.from('invoices').select('*').eq('user_id', ownerId).order('created_at', { ascending: false }),
+      supabase.from('profiles').select('*').eq('user_id', ownerId).maybeSingle(),
     ]);
+    if (seq !== fetchSeq.current) return;
 
     if (clientsRes.error) console.error('Error loading clients:', clientsRes.error.message);
     if (projectsRes.error) console.error('Error loading projects:', projectsRes.error.message);
@@ -236,22 +268,47 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setLoading(false);
   }, []);
 
+  // Leaving an account (logout, user switch) always drops any "View as".
   useEffect(() => {
-    if (isAuthenticated) {
-      fetchAll();
+    setViewAs(null);
+  }, [userId]);
+
+  useEffect(() => {
+    // Clear first so one account's data never shows under another's name.
+    setClients([]);
+    setProjects([]);
+    setTimeEntries([]);
+    setInvoices([]);
+    setProfile(null);
+    setCities([]);
+    if (isAuthenticated && dataOwnerId) {
+      fetchAll(dataOwnerId);
     } else {
-      setClients([]);
-      setProjects([]);
-      setTimeEntries([]);
-      setInvoices([]);
-      setProfile(null);
-      setCities([]);
+      fetchSeq.current++;
+      setLoading(false);
     }
-  }, [isAuthenticated, fetchAll]);
+  }, [isAuthenticated, dataOwnerId, fetchAll]);
+
+  const startViewAs = useCallback(
+    (target: ViewAsTarget) => {
+      if (!isAdmin || target.userId === userId) return;
+      setViewAs(target);
+    },
+    [isAdmin, userId]
+  );
+  const stopViewAs = useCallback(() => setViewAs(null), []);
+
+  /** Call first in every mutation: blocks writes while viewing someone else's account. */
+  const blockedWhileViewing = () => {
+    if (!readOnly) return false;
+    toast.error(READ_ONLY_MESSAGE);
+    return true;
+  };
 
   // ---------- clients ----------
 
   const addClient = async (client: Omit<Client, 'id'>) => {
+    if (blockedWhileViewing()) return;
     const { data, error } = await supabase
       .from('clients')
       .insert(clientToRow(client))
@@ -267,6 +324,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const updateClient = async (id: string, updates: Partial<Client>) => {
+    if (blockedWhileViewing()) return;
     const { data, error } = await supabase
       .from('clients')
       .update(clientToRow(updates))
@@ -283,6 +341,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const deleteClient = async (id: string) => {
+    if (blockedWhileViewing()) return;
     const { error } = await supabase.from('clients').delete().eq('id', id);
     if (error) {
       console.error('Error deleting client:', error.message);
@@ -300,6 +359,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // ---------- projects ----------
 
   const addProject = async (project: Omit<Project, 'id'>) => {
+    if (blockedWhileViewing()) return;
     const row = projectToRow(project);
     row.color = project.color || generateRandomColor();
     const { data, error } = await supabase
@@ -321,6 +381,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const updateProject = async (id: string, updates: Partial<Project>) => {
+    if (blockedWhileViewing()) return;
     const { data, error } = await supabase
       .from('projects')
       .update(projectToRow(updates))
@@ -341,6 +402,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const deleteProject = async (id: string) => {
+    if (blockedWhileViewing()) return;
     const { error } = await supabase.from('projects').delete().eq('id', id);
     if (error) {
       console.error('Error deleting project:', error.message);
@@ -362,6 +424,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // ---------- time entries ----------
 
   const addTimeEntry = async (entry: Omit<TimeEntry, 'id'>) => {
+    if (blockedWhileViewing()) return;
     const { data, error } = await supabase
       .from('time_entries')
       .insert(timeEntryToRow(entry))
@@ -377,6 +440,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const updateTimeEntry = async (id: string, updates: Partial<TimeEntry>) => {
+    if (blockedWhileViewing()) return;
     const { data, error } = await supabase
       .from('time_entries')
       .update(timeEntryToRow(updates))
@@ -393,6 +457,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const deleteTimeEntry = async (id: string) => {
+    if (blockedWhileViewing()) return;
     const { error } = await supabase.from('time_entries').delete().eq('id', id);
     if (error) {
       console.error('Error deleting time entry:', error.message);
@@ -406,6 +471,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // ---------- invoices ----------
 
   const addInvoice = async (invoice: Omit<Invoice, 'id'>): Promise<Invoice | null> => {
+    if (blockedWhileViewing()) return null;
     const { data, error } = await supabase
       .from('invoices')
       .insert(invoiceToRow(invoice))
@@ -423,6 +489,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const finalizeInvoice = async (id: string, opts: MutationOpts = {}): Promise<boolean> => {
+    if (blockedWhileViewing()) return false;
     const invoice = invoices.find((i) => i.id === id);
     if (!invoice || invoice.status !== 'draft') return false;
 
@@ -482,6 +549,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const markInvoicePaid = async (id: string, opts: MutationOpts = {}): Promise<boolean> => {
+    if (blockedWhileViewing()) return false;
     const paidAt = new Date().toISOString();
     const { data, error } = await supabase
       .from('invoices')
@@ -500,6 +568,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const updateInvoice = async (id: string, updates: Partial<Invoice>) => {
+    if (blockedWhileViewing()) return;
     const { data, error } = await supabase
       .from('invoices')
       .update(invoiceToRow(updates))
@@ -516,6 +585,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const deleteInvoice = async (id: string, opts: MutationOpts = {}): Promise<boolean> => {
+    if (blockedWhileViewing()) return false;
     const { error } = await supabase.from('invoices').delete().eq('id', id);
     if (error) {
       console.error('Error deleting invoice:', error.message);
@@ -534,6 +604,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // ---------- profile ----------
 
   const saveProfile = async (next: Profile) => {
+    if (blockedWhileViewing()) return;
     if (!userId) return;
     const { data, error } = await supabase
       .from('profiles')
@@ -576,6 +647,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const importData = async (data: AppState) => {
+    if (blockedWhileViewing()) return;
     if (!data) return;
     try {
       if (data.clients?.length) {
@@ -608,7 +680,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         const { error } = await supabase.from('time_entries').upsert(rows);
         if (error) throw error;
       }
-      await fetchAll();
+      if (dataOwnerId) await fetchAll(dataOwnerId);
       toast.success('Data imported');
     } catch (error) {
       console.error('Error importing data:', error);
@@ -628,6 +700,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         profile,
         cities,
         loading,
+        viewAs: effectiveViewAs,
+        readOnly,
+        adminView,
+        startViewAs,
+        stopViewAs,
         addClient,
         updateClient,
         deleteClient,

@@ -4,12 +4,14 @@ A time tracking application for managing clients, projects, and time entries. Bu
 
 ## Features
 
-- **Authentication**: Secure login with hardcoded credentials
+- **Authentication**: Supabase Auth (email + password), no public sign-up
+- **Team accounts**: the admin creates member accounts and can view them read-only ("View as")
 - **Client Management**: Add, edit, and delete clients
 - **Project Management**: Track projects with status, work type, and location
 - **Time Tracking**: Log time entries with date and hours
+- **Invoices**: Per-client invoices with PDF export
 - **Dashboard**: Overview with statistics and weekly time chart
-- **Data Persistence**: Uses localStorage for data storage
+- **Data Persistence**: Supabase Postgres with Row Level Security
 - **Export/Import**: JSON export and import functionality
 
 ## Tech Stack
@@ -62,7 +64,47 @@ messages stop arriving, plug in a free SMTP provider under **Authentication → 
 Settings** (e.g. Brevo, 300 emails/day free, or Resend, 3.000/month free) — both have free tiers,
 no card required.
 
+## Team accounts (admin panel)
+
+There is no public sign-up. The admin creates accounts for the people who work for them from
+**Team** (`/admin`), sets a temporary password, and can rename, re-password, deactivate or delete
+those member accounts. **View as** opens a member's dashboard, projects and profile read-only.
+
+How it fits together:
+
+- `public.team_members` (in `supabase-schema.sql`, TEAM section) holds each account's role
+  (`admin` | `member`), its lead and an `active` flag. Only the service role writes it, so nobody can
+  promote themselves. The lead gets read-only RLS access to their members' rows.
+- Account changes go through a Vercel Function, `api/admin.ts`, which uses the Supabase
+  **service role key** and only accepts requests from an active admin. It can never modify the
+  admin's own account.
+- A signed-in user without an active `team_members` row sees an "account not enabled" screen.
+
+One-time setup:
+
+1. **Supabase → Authentication → Sign In / Providers**: turn **off** "Allow new users to sign up".
+2. **Supabase → SQL Editor**: run `supabase-schema.sql` (idempotent), then insert the first admin row
+   by hand (kept out of this public repo):
+   ```sql
+   insert into public.team_members (user_id, role, display_name)
+   values ('<your auth.users id>', 'admin', '<your name>')
+   on conflict (user_id) do update set role = 'admin', lead_id = null, active = true;
+   ```
+   To undo the TEAM section, run `supabase-rollback-team.sql` (touches no business data).
+3. **Supabase → Settings → API Keys**: create a secret key and set it as
+   `SUPABASE_SERVICE_ROLE_KEY` — in `.env.local` for development and in Vercel (Production and
+   Preview) for deployments. **Never prefix it with `VITE_`**: that would ship it to the browser.
+
+```env
+# .env.local (gitignored)
+SUPABASE_SERVICE_ROLE_KEY=sb_secret_...
+```
+
 ## Local Development
+
+`npm run dev` also serves `api/admin.ts` at `/api/admin` (a small dev-only Vite middleware), so the
+Team panel works locally once `SUPABASE_SERVICE_ROLE_KEY` is in `.env.local`. Local development uses
+the same Supabase project as production, so treat test accounts as real and delete them afterwards.
 
 1. Install dependencies:
 ```bash
@@ -115,27 +157,21 @@ npm run preview
    - Add the following variables:
      - `VITE_SUPABASE_URL`: your Supabase project URL
      - `VITE_SUPABASE_ANON_KEY`: your Supabase anon key
-   - Click "Save" and redeploy the project
+     - `SUPABASE_SERVICE_ROLE_KEY`: your Supabase secret key (server-only, used by `api/admin.ts`)
+   - Click "Save" and redeploy the project (env changes only reach new deployments)
 
 4. **Configuration:**
-   - The `vercel.json` file is already configured for Vite
-   - The build command is `npm run build`
+   - The `vercel.json` file is already configured for Vite (the SPA rewrite skips `/api/*`)
+   - The build command is `npm run build` (type-checks `src/` and `api/`)
    - The output directory is `dist`
-
-### Important Notes
-
-- **Data Persistence**: This app uses localStorage, which means:
-  - Data is stored in the user's browser
-  - Data is NOT shared between devices
-  - Clearing browser cache will delete the data
-  - Each user has their own separate data
-
-- **Authentication**: The credentials are hardcoded in the code. For production use with multiple users, consider implementing a proper authentication system with a backend.
 
 ## Project Structure
 
 ```
 time-tracker-app/
+├── api/
+│   ├── admin.ts          # Vercel Function: team account administration
+│   └── _contract.ts      # Request/response types shared with the client
 ├── src/
 │   ├── components/
 │   │   ├── dialogs/      # Dialog components
@@ -150,6 +186,8 @@ time-tracker-app/
 │   │   ├── Projects.tsx
 │   │   ├── ProjectDetail.tsx
 │   │   ├── ClientDetail.tsx
+│   │   ├── Invoices.tsx
+│   │   ├── AdminTeam.tsx     # Team panel (admin only)
 │   │   └── LoginPage.tsx
 │   ├── types/
 │   │   └── index.ts      # TypeScript type definitions

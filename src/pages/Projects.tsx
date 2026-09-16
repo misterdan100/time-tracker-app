@@ -40,7 +40,7 @@ type ProjectSortKey = 'name' | 'client' | 'city' | 'address' | 'workType' | 'sta
 const ALL_CLIENTS = 'all';
 
 const Projects: React.FC = () => {
-  const { clients, projects, addProject, updateProject, deleteProject, timeEntries, cities, addCity } = useApp();
+  const { clients, projects, addProject, updateProject, deleteProject, timeEntries, cities, addCity, adminView } = useApp();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editProject, setEditProject] = useState<Project | null>(null);
   const [statusFilter, setStatusFilter] = useState<ProjectStatus | 'All'>('All');
@@ -127,10 +127,12 @@ const Projects: React.FC = () => {
         title="Projects"
         subtitle="Manage your projects"
         actions={
-          <Button onClick={() => setDialogOpen(true)} className="gap-2 w-full sm:w-auto">
-            <Plus className="w-4 h-4" />
-            Add Project
-          </Button>
+          adminView ? (
+            <Button onClick={() => setDialogOpen(true)} className="gap-2 w-full sm:w-auto">
+              <Plus className="w-4 h-4" />
+              Add Project
+            </Button>
+          ) : undefined
         }
       />
 
@@ -195,13 +197,13 @@ const Projects: React.FC = () => {
               <SortableHead sortKey="hours" sort={sort} onSort={toggle}>
                 Hours
               </SortableHead>
-              <TableHead className="text-right">Actions</TableHead>
+              {adminView && <TableHead className="text-right">Actions</TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
             {sorted.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
+                <TableCell colSpan={adminView ? 8 : 7} className="text-center text-muted-foreground py-8">
                   {projects.length === 0 ? 'No projects registered' : 'No projects match these filters'}
                 </TableCell>
               </TableRow>
@@ -217,12 +219,17 @@ const Projects: React.FC = () => {
                     </Link>
                   </TableCell>
                   <TableCell className="hidden md:table-cell">
-                    <Link
-                      to={`/client/${project.clientId}`}
-                      className="link"
-                    >
-                      {getClientName(project.clientId)}
-                    </Link>
+                    {adminView ? (
+                      <Link
+                        to={`/client/${project.clientId}`}
+                        className="link"
+                      >
+                        {getClientName(project.clientId)}
+                      </Link>
+                    ) : (
+                      // Client pages are admin-only; members just see the name.
+                      getClientName(project.clientId)
+                    )}
                   </TableCell>
                   <TableCell className="hidden lg:table-cell">{project.city || '-'}</TableCell>
                   <TableCell className="hidden xl:table-cell">{project.address || '-'}</TableCell>
@@ -233,24 +240,26 @@ const Projects: React.FC = () => {
                     <ProjectStatusBadge status={project.status} />
                   </TableCell>
                   <TableCell className="font-medium">{getProjectHours(project.id).toFixed(2)}h</TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex justify-end gap-2">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleEdit(project)}
-                      >
-                        <Pencil className="w-4 h-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => setDeleteTarget(project)}
-                      >
-                        <Trash2 className="w-4 h-4 text-destructive" />
-                      </Button>
-                    </div>
-                  </TableCell>
+                  {adminView && (
+                    <TableCell className="text-right">
+                      <div className="flex justify-end gap-2">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleEdit(project)}
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => setDeleteTarget(project)}
+                        >
+                          <Trash2 className="w-4 h-4 text-destructive" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  )}
                 </TableRow>
               ))
             )}

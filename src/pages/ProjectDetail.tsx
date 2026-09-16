@@ -32,7 +32,7 @@ const entryAccessors: SortAccessors<TimeEntry, EntrySortKey> = {
 const ProjectDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { projects, clients, timeEntries, deleteTimeEntry, updateProject, updateTimeEntry, cities, addCity } = useApp();
+  const { projects, clients, timeEntries, deleteTimeEntry, updateProject, updateTimeEntry, cities, addCity, adminView, readOnly } = useApp();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [timeEntryDialogOpen, setTimeEntryDialogOpen] = useState(false);
   const [editTimeEntry, setEditTimeEntry] = useState<TimeEntry | undefined>(undefined);
@@ -113,10 +113,12 @@ const ProjectDetail: React.FC = () => {
         subtitle="Project Details"
         onBack={() => navigate('/projects')}
         actions={
-          <Button onClick={handleEdit} className="gap-2 w-full sm:w-auto">
-            <Pencil className="w-4 h-4" />
-            Edit Project
-          </Button>
+          adminView ? (
+            <Button onClick={handleEdit} className="gap-2 w-full sm:w-auto">
+              <Pencil className="w-4 h-4" />
+              Edit Project
+            </Button>
+          ) : undefined
         }
       />
 
@@ -205,7 +207,7 @@ const ProjectDetail: React.FC = () => {
                   <SortableHead sortKey="hours" sort={entrySort} onSort={toggleEntrySort}>
                     Hours
                   </SortableHead>
-                  <TableHead className="text-right">Actions</TableHead>
+                  {!readOnly && <TableHead className="text-right">Actions</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -215,24 +217,26 @@ const ProjectDetail: React.FC = () => {
                         {format(new Date(entry.date), 'dd/MM/yyyy', { locale: enUS })}
                       </TableCell>
                       <TableCell className="font-medium">{entry.hours.toFixed(2)}h</TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex justify-end gap-2">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleEditEntry(entry)}
-                          >
-                            <Pencil className="w-4 h-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleDeleteEntry(entry.id)}
-                          >
-                            <Trash2 className="w-4 h-4 text-destructive" />
-                          </Button>
-                        </div>
-                      </TableCell>
+                      {!readOnly && (
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-2">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleEditEntry(entry)}
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleDeleteEntry(entry.id)}
+                            >
+                              <Trash2 className="w-4 h-4 text-destructive" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      )}
                     </TableRow>
                   ))}
               </TableBody>

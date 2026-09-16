@@ -1,14 +1,15 @@
 import * as React from 'react';
-import { AlertTriangle, CheckCircle2, Info, type LucideIcon } from 'lucide-react';
+import { AlertOctagon, AlertTriangle, CheckCircle2, Info, type LucideIcon } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { BADGE_TONE_CLASSES, type BadgeTone } from './badge';
 
-type CalloutTone = Extract<BadgeTone, 'success' | 'warning' | 'info'>;
+type CalloutTone = Extract<BadgeTone, 'success' | 'warning' | 'info' | 'danger'>;
 
 const ICONS: Record<CalloutTone, LucideIcon> = {
   success: CheckCircle2,
   warning: AlertTriangle,
   info: Info,
+  danger: AlertOctagon,
 };
 
 interface CalloutProps extends React.HTMLAttributes<HTMLDivElement> {
@@ -19,7 +20,7 @@ interface CalloutProps extends React.HTMLAttributes<HTMLDivElement> {
   action?: React.ReactNode;
 }
 
-/** Inline banner (profile completeness, password-reset feedback, …). */
+/** Inline banner (profile completeness, password-reset feedback, "View as" notice, …). */
 export const Callout: React.FC<CalloutProps> = ({
   tone,
   icon,
@@ -31,7 +32,7 @@ export const Callout: React.FC<CalloutProps> = ({
   const Icon = icon === undefined ? ICONS[tone] : icon;
   return (
     <div
-      role={tone === 'warning' ? 'alert' : 'status'}
+      role={tone === 'warning' || tone === 'danger' ? 'alert' : 'status'}
       className={cn(
         'flex flex-col gap-2 rounded-card border px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between',
         BADGE_TONE_CLASSES[tone],

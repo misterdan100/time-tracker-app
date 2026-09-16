@@ -59,9 +59,7 @@ alter table public.time_entries enable row level security;
 drop policy if exists "clients_select_own" on public.clients;
 create policy "clients_select_own" on public.clients
   for select using (auth.uid() = user_id);
-drop policy if exists "clients_insert_own" on public.clients;
-create policy "clients_insert_own" on public.clients
-  for insert with check (auth.uid() = user_id);
+-- clients_insert_own is defined in the TEAM section (admin-only inserts).
 drop policy if exists "clients_update_own" on public.clients;
 create policy "clients_update_own" on public.clients
   for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
@@ -73,9 +71,7 @@ create policy "clients_delete_own" on public.clients
 drop policy if exists "projects_select_own" on public.projects;
 create policy "projects_select_own" on public.projects
   for select using (auth.uid() = user_id);
-drop policy if exists "projects_insert_own" on public.projects;
-create policy "projects_insert_own" on public.projects
-  for insert with check (auth.uid() = user_id);
+-- projects_insert_own is defined in the TEAM section (admin-only inserts).
 drop policy if exists "projects_update_own" on public.projects;
 create policy "projects_update_own" on public.projects
   for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
@@ -224,3 +220,91 @@ update public.projects
  where work_types = '{}'
    and work_type is not null
    and work_type <> '';
+
+-- ============================================================
+-- TEAM — roles and lead -> member accounts (added later — safe to re-run)
+-- ============================================================
+-- One admin (the lead) creates member accounts from the in-app Team panel.
+-- Only the service role (api/admin.ts) writes team_members, so nobody can
+-- promote themselves. The lead gets READ access to members' data ("View as").
+-- The first admin row is inserted once by hand (kept out of this public file).
+
+create table if not exists public.team_members (
+  user_id      uuid primary key references auth.users (id) on delete cascade,
+  role         text not null check (role in ('admin', 'member')),
+  lead_id      uuid references auth.users (id) on delete set null,
+  display_name text not null default '',
+  active       boolean not null default true,
+  created_at   timestamptz not null default now(),
+  constraint team_members_not_own_lead check (lead_id is null or lead_id <> user_id)
+);
+
+create index if not exists team_members_lead_id_idx on public.team_members (lead_id);
+
+alter table public.team_members enable row level security;
+-- No write policies exist; also drop the default write grants (defense in depth).
+revoke insert, update, delete, truncate on public.team_members from anon, authenticated;
+
+drop policy if exists "team_members_select_self_or_led" on public.team_members;
+create policy "team_members_select_self_or_led" on public.team_members
+  for select to authenticated
+  using (user_id = (select auth.uid()) or lead_id = (select auth.uid()));
+
+-- ---------- helpers (SECURITY DEFINER: read team_members without RLS, no recursion) ----------
+
+create or replace function public.is_admin()
+returns boolean
+language sql stable security definer set search_path = ''
+as $$
+  select exists (
+    select 1 from public.team_members
+    where user_id = (select auth.uid()) and role = 'admin' and active
+  );
+$$;
+
+create or replace function public.is_lead_of(target uuid)
+returns boolean
+language sql stable security definer set search_path = ''
+as $$
+  select exists (
+    select 1 from public.team_members
+    where user_id = target and lead_id = (select auth.uid())
+  );
+$$;
+
+revoke all on function public.is_admin()       from public, anon;
+revoke all on function public.is_lead_of(uuid) from public, anon;
+grant execute on function public.is_admin()       to authenticated, service_role;
+grant execute on function public.is_lead_of(uuid) to authenticated, service_role;
+
+-- ---------- the lead can READ led users' data (OR'ed with the *_select_own policies) ----------
+
+drop policy if exists "clients_select_led" on public.clients;
+create policy "clients_select_led" on public.clients
+  for select to authenticated using (public.is_lead_of(user_id));
+
+drop policy if exists "projects_select_led" on public.projects;
+create policy "projects_select_led" on public.projects
+  for select to authenticated using (public.is_lead_of(user_id));
+
+drop policy if exists "time_entries_select_led" on public.time_entries;
+create policy "time_entries_select_led" on public.time_entries
+  for select to authenticated using (public.is_lead_of(user_id));
+
+drop policy if exists "invoices_select_led" on public.invoices;
+create policy "invoices_select_led" on public.invoices
+  for select to authenticated using (public.is_lead_of(user_id));
+
+drop policy if exists "profiles_select_led" on public.profiles;
+create policy "profiles_select_led" on public.profiles
+  for select to authenticated using (public.is_lead_of(user_id));
+
+-- ---------- only the admin creates clients and projects ----------
+
+drop policy if exists "clients_insert_own" on public.clients;
+create policy "clients_insert_own" on public.clients
+  for insert with check (auth.uid() = user_id and public.is_admin());
+
+drop policy if exists "projects_insert_own" on public.projects;
+create policy "projects_insert_own" on public.projects
+  for insert with check (auth.uid() = user_id and public.is_admin());
