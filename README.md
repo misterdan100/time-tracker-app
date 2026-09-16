@@ -79,6 +79,12 @@ How it fits together:
   **service role key** and only accepts requests from an active admin. It can never modify the
   admin's own account.
 - A signed-in user without an active `team_members` row sees an "account not enabled" screen.
+- **Project assignment:** the admin opens projects to members from the project page (Team card) or
+  from Team → member → Projects (`public.project_members`). Members see only their assigned projects
+  (no client details) and log hours only on those; RLS enforces it. Removing an assignment keeps the
+  member's hours, read-only. The admin sees each member's hours per project on the Team card
+  (informational — not part of the admin's own totals or invoices). To undo the SQL, run
+  `supabase-rollback-assignments.sql`.
 
 One-time setup:
 

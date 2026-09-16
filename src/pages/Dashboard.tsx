@@ -51,6 +51,8 @@ const Dashboard: React.FC = () => {
 
   const getClientName = (projectId: string) => {
     const project = projects.find((p) => p.id === projectId);
+    // Members don't see clients: show where the project is instead.
+    if (!adminView) return project?.city || '—';
     const client = clients.find((c) => c.id === project?.clientId);
     return client?.companyName || 'Unknown Client';
   };

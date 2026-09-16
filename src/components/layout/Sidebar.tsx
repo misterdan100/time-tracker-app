@@ -42,9 +42,9 @@ const navItemClass = (active: boolean, collapsed: boolean) =>
 
 const Sidebar: React.FC<SidebarProps> = ({ onOpenTimeEntry, open, onClose }) => {
   const location = useLocation();
-  // Members (and the admin while viewing a member) get the member menu: no Log Time until
-  // projects are assigned (next phase), no import/export.
-  const { exportData, importData, adminView } = useApp();
+  // Members (and the admin while viewing a member) get the member menu without import/export.
+  // Everyone logs time on their own account; nobody writes while viewing someone else's.
+  const { exportData, importData, adminView, readOnly } = useApp();
   const { logout } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -170,7 +170,7 @@ const Sidebar: React.FC<SidebarProps> = ({ onOpenTimeEntry, open, onClose }) => 
         )}
 
         {/* Primary CTA */}
-        {adminView && (
+        {!readOnly && (
           <Button
             onClick={() => {
               onOpenTimeEntry();

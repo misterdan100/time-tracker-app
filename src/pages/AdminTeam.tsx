@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import { endOfMonth, format, isWithinInterval, parseISO, startOfMonth } from 'date-fns';
 import {
   Ban,
+  Building2,
   Eye,
   KeyRound,
   MoreHorizontal,
@@ -39,13 +40,15 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { SortableHead } from '../components/ui/sortable-head';
 import MemberDialog from '../components/dialogs/MemberDialog';
 import SetPasswordDialog from '../components/dialogs/SetPasswordDialog';
+import MemberProjectsDialog, {
+  type MemberProjectsTarget,
+} from '../components/dialogs/MemberProjectsDialog';
 import { useApp } from '../context/AppContext';
-import { supabase } from '../lib/supabase';
 import { adminApi, errorMessage } from '../lib/adminApi';
 import { dateSortValue, SortAccessors, useSort } from '../lib/sort';
 import { DISPLAY_NAME_MAX_LENGTH, type AdminUser } from '../../api/_contract';
 
-type TeamSortKey = 'name' | 'status' | 'lastSignIn' | 'hours';
+type TeamSortKey = 'name' | 'status' | 'lastSignIn' | 'projects' | 'hours';
 
 const displayName = (u: AdminUser) => u.membership?.displayName || u.email;
 
@@ -60,12 +63,12 @@ const fmtSignIn = (iso: string | null) => {
 
 const AdminTeam: React.FC = () => {
   const navigate = useNavigate();
-  const { viewAs, startViewAs, stopViewAs } = useApp();
+  const { viewAs, startViewAs, stopViewAs, assignments, teamEntries, refreshData } = useApp();
 
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
-  const [hoursByUser, setHoursByUser] = useState<Record<string, number>>({});
+  const [projectsTarget, setProjectsTarget] = useState<MemberProjectsTarget | null>(null);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [passwordTarget, setPasswordTarget] = useState<AdminUser | null>(null);
@@ -94,48 +97,39 @@ const AdminTeam: React.FC = () => {
   }, [load]);
 
   const members = useMemo(() => users.filter((u) => !u.isSelf), [users]);
-  const memberIds = useMemo(() => members.map((m) => m.id).sort().join(','), [members]);
 
-  // Hours this month per member, read directly through the lead's RLS read access.
-  useEffect(() => {
-    const ids = memberIds ? memberIds.split(',') : [];
-    if (ids.length === 0) {
-      setHoursByUser({});
-      return;
+  // Hours this month per member (team hours are loaded by AppContext through the lead's RLS access).
+  const hoursByUser = useMemo(() => {
+    const now = new Date();
+    const interval = { start: startOfMonth(now), end: endOfMonth(now) };
+    const totals: Record<string, number> = {};
+    for (const e of teamEntries) {
+      if (!isWithinInterval(new Date(e.date), interval)) continue;
+      totals[e.userId] = (totals[e.userId] ?? 0) + e.hours;
     }
-    let cancelled = false;
-    supabase
-      .from('time_entries')
-      .select('user_id, hours, date')
-      .in('user_id', ids)
-      .then(({ data, error }) => {
-        if (cancelled) return;
-        if (error) {
-          console.error('Error loading team hours:', error.message);
-          return;
-        }
-        const now = new Date();
-        const interval = { start: startOfMonth(now), end: endOfMonth(now) };
-        const totals: Record<string, number> = {};
-        for (const row of data ?? []) {
-          if (!isWithinInterval(new Date(row.date), interval)) continue;
-          totals[row.user_id] = (totals[row.user_id] ?? 0) + Number(row.hours);
-        }
-        setHoursByUser(totals);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [memberIds]);
+    return totals;
+  }, [teamEntries]);
+
+  const projectCountByUser = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const a of assignments) counts[a.userId] = (counts[a.userId] ?? 0) + 1;
+    return counts;
+  }, [assignments]);
+
+  // Keep AppContext's team data (names, status, hours) in sync after account changes.
+  const afterTeamChange = () => {
+    refreshData();
+  };
 
   const accessors = useMemo<SortAccessors<AdminUser, TeamSortKey>>(
     () => ({
       name: (u) => displayName(u),
       status: (u) => (u.isSelf ? 0 : u.membership?.active ? 1 : 2),
       lastSignIn: (u) => dateSortValue(u.lastSignInAt),
+      projects: (u) => (u.isSelf ? -1 : projectCountByUser[u.id] ?? 0),
       hours: (u) => hoursByUser[u.id] ?? 0,
     }),
-    [hoursByUser]
+    [hoursByUser, projectCountByUser]
   );
   const { sort, toggle, sorted } = useSort(users, accessors, { key: 'status', dir: 'asc' });
 
@@ -159,6 +153,7 @@ const AdminTeam: React.FC = () => {
     try {
       const { user } = await adminApi.rename(renameTarget.id, renameValue);
       replaceUser(user);
+      afterTeamChange();
       toast.success('Name updated');
       setRenameTarget(null);
     } catch (err) {
@@ -175,6 +170,7 @@ const AdminTeam: React.FC = () => {
     try {
       const { user } = await adminApi.setActive(activeTarget.id, nextActive);
       replaceUser(user);
+      afterTeamChange();
       toast.success(nextActive ? 'Account reactivated' : 'Account deactivated');
       setActiveTarget(null);
     } catch (err) {
@@ -196,6 +192,7 @@ const AdminTeam: React.FC = () => {
       await adminApi.remove(deleteTarget.id, deleteConfirm);
       if (viewAs?.userId === deleteTarget.id) stopViewAs();
       setUsers((prev) => prev.filter((u) => u.id !== deleteTarget.id));
+      afterTeamChange();
       toast.success('Account deleted');
       setDeleteTarget(null);
     } catch (err) {
@@ -238,8 +235,8 @@ const AdminTeam: React.FC = () => {
 
       {!loading && !loadError && members.length === 0 && (
         <Callout tone="info">
-          No team members yet. Add an account for each person who works for you — you can view
-          their hours and, next, assign them projects.
+          No team members yet. Add an account for each person who works for you, then open
+          Projects in their menu to choose what they can log hours on.
         </Callout>
       )}
 
@@ -262,6 +259,14 @@ const AdminTeam: React.FC = () => {
                 Last sign-in
               </SortableHead>
               <SortableHead
+                sortKey="projects"
+                sort={sort}
+                onSort={toggle}
+                className="hidden lg:table-cell"
+              >
+                Projects
+              </SortableHead>
+              <SortableHead
                 sortKey="hours"
                 sort={sort}
                 onSort={toggle}
@@ -275,7 +280,7 @@ const AdminTeam: React.FC = () => {
           <TableBody>
             {loading ? (
               <TableRow>
-                <TableCell colSpan={5} className="py-8 text-center text-muted-foreground">
+                <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
                   Loading team…
                 </TableCell>
               </TableRow>
@@ -300,6 +305,9 @@ const AdminTeam: React.FC = () => {
                     <TableCell className="hidden whitespace-nowrap md:table-cell">
                       {fmtSignIn(u.lastSignInAt)}
                     </TableCell>
+                    <TableCell className="hidden lg:table-cell">
+                      {u.isSelf ? '—' : projectCountByUser[u.id] ?? 0}
+                    </TableCell>
                     <TableCell className="hidden sm:table-cell">
                       {u.isSelf ? '—' : `${(hoursByUser[u.id] ?? 0).toFixed(2)}h`}
                     </TableCell>
@@ -319,6 +327,12 @@ const AdminTeam: React.FC = () => {
                             <DropdownMenuItem onSelect={() => handleViewAs(u)}>
                               <Eye className="h-4 w-4" />
                               View as
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onSelect={() => setProjectsTarget({ userId: u.id, name: displayName(u) })}
+                            >
+                              <Building2 className="h-4 w-4" />
+                              Projects
                             </DropdownMenuItem>
                             <DropdownMenuItem onSelect={() => openRename(u)}>
                               <Pencil className="h-4 w-4" />
@@ -364,8 +378,13 @@ const AdminTeam: React.FC = () => {
       <MemberDialog
         open={createOpen}
         onOpenChange={setCreateOpen}
-        onCreated={(user) => setUsers((prev) => [...prev, user])}
+        onCreated={(user) => {
+          setUsers((prev) => [...prev, user]);
+          afterTeamChange();
+        }}
       />
+
+      <MemberProjectsDialog member={projectsTarget} onClose={() => setProjectsTarget(null)} />
 
       <SetPasswordDialog target={passwordTarget} onClose={() => setPasswordTarget(null)} />
 

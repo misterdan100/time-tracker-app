@@ -31,7 +31,7 @@ import { Toaster } from 'sonner';
 const AUTH_ROUTES = ['/forgot-password', '/reset-password'];
 
 function AppContent() {
-  const { projects, addTimeEntry, adminView } = useApp();
+  const { loggableProjects, addTimeEntry, adminView } = useApp();
   const { isAuthenticated, loading, membership, membershipLoading, membershipError } = useAuth();
   const { pathname } = useLocation();
   const [timeEntryOpen, setTimeEntryOpen] = useState(false);
@@ -108,7 +108,7 @@ function AppContent() {
         open={timeEntryOpen}
         onOpenChange={setTimeEntryOpen}
         onSave={addTimeEntry}
-        projects={projects}
+        projects={loggableProjects}
       />
     </div>
   );

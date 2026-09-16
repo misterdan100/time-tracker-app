@@ -79,6 +79,28 @@ export interface Profile {
   phone: string;
 }
 
+/** A project the lead has opened to a team member (public.project_members). */
+export interface ProjectAssignment {
+  projectId: string;
+  userId: string;
+}
+
+/** A member led by the signed-in admin (from public.team_members). */
+export interface TeamMemberSummary {
+  userId: string;
+  displayName: string;
+  active: boolean;
+}
+
+/** A time entry logged by a team member, as seen by their lead (read-only). */
+export interface TeamTimeEntry {
+  id: string;
+  userId: string;
+  projectId: string;
+  date: string;
+  hours: number;
+}
+
 export interface AppState {
   clients: Client[];
   projects: Project[];

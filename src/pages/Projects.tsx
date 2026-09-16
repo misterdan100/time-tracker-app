@@ -34,13 +34,26 @@ import { workTypesLabel } from '../lib/workTypes';
 import WorkTypeTags from '../components/project/WorkTypeTags';
 import ProjectStatusBadge from '../components/project/ProjectStatusBadge';
 import PageHeader from '../components/layout/PageHeader';
+import { Badge } from '../components/ui/badge';
 
 type ProjectSortKey = 'name' | 'client' | 'city' | 'address' | 'workType' | 'status' | 'hours' | 'created';
 
 const ALL_CLIENTS = 'all';
 
 const Projects: React.FC = () => {
-  const { clients, projects, addProject, updateProject, deleteProject, timeEntries, cities, addCity, adminView } = useApp();
+  const {
+    clients,
+    projects,
+    addProject,
+    updateProject,
+    deleteProject,
+    timeEntries,
+    teamEntries,
+    cities,
+    addCity,
+    adminView,
+    loggableProjects,
+  } = useApp();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editProject, setEditProject] = useState<Project | null>(null);
   const [statusFilter, setStatusFilter] = useState<ProjectStatus | 'All'>('All');
@@ -113,6 +126,14 @@ const Projects: React.FC = () => {
   const deleteEntryCount = deleteTarget
     ? timeEntries.filter((te) => te.projectId === deleteTarget.id).length
     : 0;
+  const deleteTeamHours = deleteTarget
+    ? teamEntries
+        .filter((te) => te.projectId === deleteTarget.id)
+        .reduce((sum, te) => sum + te.hours, 0)
+    : 0;
+  // Members keep read access to projects they were removed from.
+  const isUnassigned = (projectId: string) =>
+    !adminView && !loggableProjects.some((p) => p.id === projectId);
 
   const handleDialogClose = () => {
     setDialogOpen(false);
@@ -125,7 +146,7 @@ const Projects: React.FC = () => {
     <div className="space-y-6">
       <PageHeader
         title="Projects"
-        subtitle="Manage your projects"
+        subtitle={adminView ? 'Manage your projects' : 'Projects assigned to you'}
         actions={
           adminView ? (
             <Button onClick={() => setDialogOpen(true)} className="gap-2 w-full sm:w-auto">
@@ -152,24 +173,26 @@ const Projects: React.FC = () => {
             ))}
           </div>
         </div>
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
-          <label htmlFor="project-client-filter" className="text-sm font-medium">
-            Client:
-          </label>
-          <Select value={clientFilter} onValueChange={setClientFilter}>
-            <SelectTrigger id="project-client-filter" className="w-full sm:w-56">
-              <SelectValue placeholder="All clients" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ALL_CLIENTS}>All clients</SelectItem>
-              {clients.map((c) => (
-                <SelectItem key={c.id} value={c.id}>
-                  {c.companyName}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+        {adminView && (
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
+            <label htmlFor="project-client-filter" className="text-sm font-medium">
+              Client:
+            </label>
+            <Select value={clientFilter} onValueChange={setClientFilter}>
+              <SelectTrigger id="project-client-filter" className="w-full sm:w-56">
+                <SelectValue placeholder="All clients" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL_CLIENTS}>All clients</SelectItem>
+                {clients.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    {c.companyName}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
       </div>
 
       <div className="surface overflow-hidden">
@@ -179,9 +202,11 @@ const Projects: React.FC = () => {
               <SortableHead sortKey="name" sort={sort} onSort={toggle}>
                 Name
               </SortableHead>
-              <SortableHead sortKey="client" sort={sort} onSort={toggle} className="hidden md:table-cell">
-                Client
-              </SortableHead>
+              {adminView && (
+                <SortableHead sortKey="client" sort={sort} onSort={toggle} className="hidden md:table-cell">
+                  Client
+                </SortableHead>
+              )}
               <SortableHead sortKey="city" sort={sort} onSort={toggle} className="hidden lg:table-cell">
                 City
               </SortableHead>
@@ -203,8 +228,12 @@ const Projects: React.FC = () => {
           <TableBody>
             {sorted.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={adminView ? 8 : 7} className="text-center text-muted-foreground py-8">
-                  {projects.length === 0 ? 'No projects registered' : 'No projects match these filters'}
+                <TableCell colSpan={adminView ? 8 : 6} className="text-center text-muted-foreground py-8">
+                  {projects.length === 0
+                    ? adminView
+                      ? 'No projects registered'
+                      : 'No projects assigned to you yet'
+                    : 'No projects match these filters'}
                 </TableCell>
               </TableRow>
             ) : (
@@ -217,20 +246,22 @@ const Projects: React.FC = () => {
                     >
                       {project.name}
                     </Link>
+                    {isUnassigned(project.id) && (
+                      <Badge tone="neutral" className="ml-2">
+                        Not assigned
+                      </Badge>
+                    )}
                   </TableCell>
-                  <TableCell className="hidden md:table-cell">
-                    {adminView ? (
+                  {adminView && (
+                    <TableCell className="hidden md:table-cell">
                       <Link
                         to={`/client/${project.clientId}`}
                         className="link"
                       >
                         {getClientName(project.clientId)}
                       </Link>
-                    ) : (
-                      // Client pages are admin-only; members just see the name.
-                      getClientName(project.clientId)
-                    )}
-                  </TableCell>
+                    </TableCell>
+                  )}
                   <TableCell className="hidden lg:table-cell">{project.city || '-'}</TableCell>
                   <TableCell className="hidden xl:table-cell">{project.address || '-'}</TableCell>
                   <TableCell className="hidden lg:table-cell">
@@ -294,6 +325,14 @@ const Projects: React.FC = () => {
                     deleteEntryCount === 1 ? 'entry' : 'entries'
                   }.`
                 : '.'}{' '}
+              {deleteTeamHours > 0 && (
+                <>
+                  <span className="font-semibold text-destructive">
+                    {deleteTeamHours.toFixed(2)}h logged by your team
+                  </span>{' '}
+                  on this project will be deleted too.{' '}
+                </>
+              )}
               This action cannot be undone.
             </DialogDescription>
           </DialogHeader>

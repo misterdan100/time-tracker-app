@@ -1,6 +1,16 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
 import { toast } from 'sonner';
-import { AppState, Client, Invoice, Profile, Project, TimeEntry } from '../types';
+import {
+  AppState,
+  Client,
+  Invoice,
+  Profile,
+  Project,
+  ProjectAssignment,
+  TeamMemberSummary,
+  TeamTimeEntry,
+  TimeEntry,
+} from '../types';
 import { supabase } from '../lib/supabase';
 import {
   buildLineItems,
@@ -30,6 +40,17 @@ interface AppContextType {
   profile: Profile | null;
   cities: string[];
   loading: boolean;
+  /**
+   * Project assignments visible to the data owner: for the admin, every assignment on their
+   * projects; for a member, their own assignments.
+   */
+  assignments: ProjectAssignment[];
+  /** Admin only: the members they lead. */
+  teamMembers: TeamMemberSummary[];
+  /** Admin only: hours logged by their members (read-only, not part of the admin's own totals). */
+  teamEntries: TeamTimeEntry[];
+  /** Projects the signed-in user can log hours on (members: assigned ones only). */
+  loggableProjects: Project[];
   /** Set while the admin is viewing a member's account. */
   viewAs: ViewAsTarget | null;
   /** True while viewing another account: every mutation is blocked. */
@@ -41,6 +62,12 @@ interface AppContextType {
   adminView: boolean;
   startViewAs: (target: ViewAsTarget) => void;
   stopViewAs: () => void;
+  /** Re-load everything for the current data owner (e.g. after team changes). */
+  refreshData: () => Promise<void>;
+  assignProject: (projectId: string, userId: string) => Promise<boolean>;
+  unassignProject: (projectId: string, userId: string) => Promise<boolean>;
+  /** Replace a member's assignments with exactly `projectIds` (Team page). */
+  setMemberProjects: (userId: string, projectIds: string[]) => Promise<boolean>;
   addClient: (client: Omit<Client, 'id'>) => Promise<void>;
   updateClient: (id: string, client: Partial<Client>) => Promise<void>;
   deleteClient: (id: string) => Promise<void>;
@@ -214,25 +241,46 @@ const profileToRow = (p: Profile): Record<string, unknown> => ({
   phone: p.phone,
 });
 
+const rowToAssignment = (r: any): ProjectAssignment => ({
+  projectId: r.project_id,
+  userId: r.user_id,
+});
+
+const rowToTeamEntry = (r: any): TeamTimeEntry => ({
+  id: r.id,
+  userId: r.user_id,
+  projectId: r.project_id,
+  date: r.date,
+  hours: Number(r.hours),
+});
+
+/** Stand-in for a query we skip, so Promise.all keeps one shape. */
+const EMPTY = Promise.resolve({ data: [] as any[], error: null });
+
 const citiesFromProjects = (projects: Project[]): string[] =>
   Array.from(new Set(projects.map((p) => p.city).filter(Boolean)));
 
 const READ_ONLY_MESSAGE = 'Read-only while viewing another account';
 
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const { isAuthenticated, userId, isAdmin } = useAuth();
+  const { isAuthenticated, userId, isAdmin, isMember, membershipLoading } = useAuth();
   // Not persisted: a reload or logout always returns the admin to their own data.
   const [viewAs, setViewAs] = useState<ViewAsTarget | null>(null);
   const effectiveViewAs = isAdmin && viewAs && viewAs.userId !== userId ? viewAs : null;
   const dataOwnerId = effectiveViewAs?.userId ?? userId;
   const readOnly = effectiveViewAs !== null;
   const adminView = isAdmin && !readOnly;
+  // Whose-data shape to load: members (and the admin viewing one) get assignment-based projects.
+  const ownerIsMember = readOnly || isMember;
   const [clients, setClients] = useState<Client[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [timeEntries, setTimeEntries] = useState<TimeEntry[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [cities, setCities] = useState<string[]>([]);
+  const [assignments, setAssignments] = useState<ProjectAssignment[]>([]);
+  const [teamMembers, setTeamMembers] = useState<TeamMemberSummary[]>([]);
+  const [teamEntries, setTeamEntries] = useState<TeamTimeEntry[]>([]);
   const [loading, setLoading] = useState(false);
 
   // Guards against a slow earlier response overwriting a newer one (e.g. switching accounts).
@@ -240,31 +288,91 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   // Always filter by owner explicitly: a lead can also READ their members' rows via RLS,
   // so relying on RLS alone would mix accounts (and break the single-profile query).
-  const fetchAll = useCallback(async (ownerId: string) => {
+  const fetchAll = useCallback(async (ownerId: string, asMember: boolean) => {
     const seq = ++fetchSeq.current;
     setLoading(true);
-    const [clientsRes, projectsRes, entriesRes, invoicesRes, profileRes] = await Promise.all([
-      supabase.from('clients').select('*').eq('user_id', ownerId).order('created_at', { ascending: true }),
-      supabase.from('projects').select('*').eq('user_id', ownerId).order('created_at', { ascending: true }),
-      supabase.from('time_entries').select('*').eq('user_id', ownerId).order('date', { ascending: false }),
-      supabase.from('invoices').select('*').eq('user_id', ownerId).order('created_at', { ascending: false }),
-      supabase.from('profiles').select('*').eq('user_id', ownerId).maybeSingle(),
-    ]);
+    const [clientsRes, ownProjectsRes, entriesRes, invoicesRes, profileRes, myAssignmentsRes, membersRes] =
+      await Promise.all([
+        // Members have no clients or projects of their own.
+        asMember
+          ? EMPTY
+          : supabase.from('clients').select('*').eq('user_id', ownerId).order('created_at', { ascending: true }),
+        asMember
+          ? EMPTY
+          : supabase.from('projects').select('*').eq('user_id', ownerId).order('created_at', { ascending: true }),
+        supabase.from('time_entries').select('*').eq('user_id', ownerId).order('date', { ascending: false }),
+        supabase.from('invoices').select('*').eq('user_id', ownerId).order('created_at', { ascending: false }),
+        supabase.from('profiles').select('*').eq('user_id', ownerId).maybeSingle(),
+        asMember ? supabase.from('project_members').select('*').eq('user_id', ownerId) : EMPTY,
+        asMember
+          ? EMPTY
+          : supabase.from('team_members').select('user_id, display_name, active').eq('lead_id', ownerId),
+      ]);
     if (seq !== fetchSeq.current) return;
 
     if (clientsRes.error) console.error('Error loading clients:', clientsRes.error.message);
-    if (projectsRes.error) console.error('Error loading projects:', projectsRes.error.message);
+    if (ownProjectsRes.error) console.error('Error loading projects:', ownProjectsRes.error.message);
     if (entriesRes.error) console.error('Error loading time entries:', entriesRes.error.message);
     if (invoicesRes.error) console.error('Error loading invoices:', invoicesRes.error.message);
     if (profileRes.error) console.error('Error loading profile:', profileRes.error.message);
+    if (myAssignmentsRes.error) console.error('Error loading assignments:', myAssignmentsRes.error.message);
+    if (membersRes.error) console.error('Error loading team:', membersRes.error.message);
 
-    const loadedProjects = (projectsRes.data ?? []).map(rowToProject);
+    const loadedEntries = (entriesRes.data ?? []).map(rowToTimeEntry);
+    let loadedProjects = (ownProjectsRes.data ?? []).map(rowToProject);
+    let loadedAssignments: ProjectAssignment[] = (myAssignmentsRes.data ?? []).map(rowToAssignment);
+    const loadedMembers: TeamMemberSummary[] = (membersRes.data ?? []).map((r: any) => ({
+      userId: r.user_id,
+      displayName: r.display_name ?? '',
+      active: !!r.active,
+    }));
+    let loadedTeamEntries: TeamTimeEntry[] = [];
+
+    if (asMember) {
+      // Assigned projects, plus ones they logged hours on before being unassigned (read-only).
+      const ids = Array.from(
+        new Set([...loadedAssignments.map((a) => a.projectId), ...loadedEntries.map((e) => e.projectId)])
+      );
+      if (ids.length > 0) {
+        const res = await supabase
+          .from('projects')
+          .select('*')
+          .in('id', ids)
+          .order('created_at', { ascending: true });
+        if (res.error) console.error('Error loading assigned projects:', res.error.message);
+        loadedProjects = (res.data ?? []).map(rowToProject);
+      }
+    } else {
+      const projectIds = loadedProjects.map((p) => p.id);
+      const memberIds = loadedMembers.map((m) => m.userId);
+      const [assignRes, teamEntriesRes] = await Promise.all([
+        projectIds.length > 0
+          ? supabase.from('project_members').select('*').in('project_id', projectIds)
+          : EMPTY,
+        memberIds.length > 0
+          ? supabase
+              .from('time_entries')
+              .select('id, user_id, project_id, date, hours')
+              .in('user_id', memberIds)
+              .order('date', { ascending: false })
+          : EMPTY,
+      ]);
+      if (assignRes.error) console.error('Error loading assignments:', assignRes.error.message);
+      if (teamEntriesRes.error) console.error('Error loading team hours:', teamEntriesRes.error.message);
+      loadedAssignments = (assignRes.data ?? []).map(rowToAssignment);
+      loadedTeamEntries = (teamEntriesRes.data ?? []).map(rowToTeamEntry);
+    }
+    if (seq !== fetchSeq.current) return;
+
     setClients((clientsRes.data ?? []).map(rowToClient));
     setProjects(loadedProjects);
-    setTimeEntries((entriesRes.data ?? []).map(rowToTimeEntry));
+    setTimeEntries(loadedEntries);
     setInvoices((invoicesRes.data ?? []).map(rowToInvoice));
     setProfile(profileRes.data ? rowToProfile(profileRes.data) : null);
     setCities(citiesFromProjects(loadedProjects));
+    setAssignments(loadedAssignments);
+    setTeamMembers(loadedMembers);
+    setTeamEntries(loadedTeamEntries);
     setLoading(false);
   }, []);
 
@@ -281,13 +389,21 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setInvoices([]);
     setProfile(null);
     setCities([]);
-    if (isAuthenticated && dataOwnerId) {
-      fetchAll(dataOwnerId);
+    setAssignments([]);
+    setTeamMembers([]);
+    setTeamEntries([]);
+    // Wait for the role: it decides which shape of data to load.
+    if (isAuthenticated && dataOwnerId && !membershipLoading) {
+      fetchAll(dataOwnerId, ownerIsMember);
     } else {
       fetchSeq.current++;
       setLoading(false);
     }
-  }, [isAuthenticated, dataOwnerId, fetchAll]);
+  }, [isAuthenticated, dataOwnerId, ownerIsMember, membershipLoading, fetchAll]);
+
+  const refreshData = useCallback(async () => {
+    if (isAuthenticated && dataOwnerId) await fetchAll(dataOwnerId, ownerIsMember);
+  }, [isAuthenticated, dataOwnerId, ownerIsMember, fetchAll]);
 
   const startViewAs = useCallback(
     (target: ViewAsTarget) => {
@@ -353,6 +469,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setClients((prev) => prev.filter((c) => c.id !== id));
     setProjects((prev) => prev.filter((p) => p.clientId !== id));
     setTimeEntries((prev) => prev.filter((te) => !projectIds.includes(te.projectId)));
+    setAssignments((prev) => prev.filter((a) => !projectIds.includes(a.projectId)));
+    setTeamEntries((prev) => prev.filter((te) => !projectIds.includes(te.projectId)));
     toast.success('Client deleted');
   };
 
@@ -413,6 +531,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const removedEntries = timeEntries.filter((te) => te.projectId === id).length;
     setProjects((prev) => prev.filter((p) => p.id !== id));
     setTimeEntries((prev) => prev.filter((te) => te.projectId !== id));
+    // The DB cascade also removes assignments and team hours on this project.
+    setAssignments((prev) => prev.filter((a) => a.projectId !== id));
+    setTeamEntries((prev) => prev.filter((te) => te.projectId !== id));
     toast.success(`"${projectName}" deleted`, {
       description:
         removedEntries > 0
@@ -624,6 +745,86 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     toast.success('Profile saved');
   };
 
+  // ---------- project assignments (admin) ----------
+
+  const assignProject = async (projectId: string, memberId: string): Promise<boolean> => {
+    if (blockedWhileViewing()) return false;
+    const { error } = await supabase
+      .from('project_members')
+      .insert({ project_id: projectId, user_id: memberId });
+    if (error) {
+      console.error('Error assigning project:', error.message);
+      toast.error('Could not assign the project', { description: error.message });
+      return false;
+    }
+    setAssignments((prev) => [...prev, { projectId, userId: memberId }]);
+    toast.success('Project assigned');
+    return true;
+  };
+
+  const unassignProject = async (projectId: string, memberId: string): Promise<boolean> => {
+    if (blockedWhileViewing()) return false;
+    const { error } = await supabase
+      .from('project_members')
+      .delete()
+      .eq('project_id', projectId)
+      .eq('user_id', memberId);
+    if (error) {
+      console.error('Error removing assignment:', error.message);
+      toast.error('Could not remove the assignment', { description: error.message });
+      return false;
+    }
+    setAssignments((prev) =>
+      prev.filter((a) => !(a.projectId === projectId && a.userId === memberId))
+    );
+    toast.success('Removed from project');
+    return true;
+  };
+
+  const setMemberProjects = async (memberId: string, projectIds: string[]): Promise<boolean> => {
+    if (blockedWhileViewing()) return false;
+    const current = new Set(assignments.filter((a) => a.userId === memberId).map((a) => a.projectId));
+    const wanted = new Set(projectIds);
+    const toAdd = projectIds.filter((id) => !current.has(id));
+    const toRemove = Array.from(current).filter((id) => !wanted.has(id));
+
+    if (toAdd.length > 0) {
+      const { error } = await supabase
+        .from('project_members')
+        .insert(toAdd.map((id) => ({ project_id: id, user_id: memberId })));
+      if (error) {
+        console.error('Error assigning projects:', error.message);
+        toast.error('Could not update projects', { description: error.message });
+        return false;
+      }
+    }
+    if (toRemove.length > 0) {
+      const { error } = await supabase
+        .from('project_members')
+        .delete()
+        .eq('user_id', memberId)
+        .in('project_id', toRemove);
+      if (error) {
+        console.error('Error removing assignments:', error.message);
+        toast.error('Could not update projects', { description: error.message });
+        // Keep local state honest about the inserts that did succeed.
+        setAssignments((prev) => [...prev, ...toAdd.map((id) => ({ projectId: id, userId: memberId }))]);
+        return false;
+      }
+    }
+    setAssignments((prev) => [
+      ...prev.filter((a) => !(a.userId === memberId && toRemove.includes(a.projectId))),
+      ...toAdd.map((id) => ({ projectId: id, userId: memberId })),
+    ]);
+    toast.success('Projects updated');
+    return true;
+  };
+
+  // Members log hours only on currently assigned projects; the admin on their own.
+  const loggableProjects = ownerIsMember
+    ? projects.filter((p) => assignments.some((a) => a.projectId === p.id && a.userId === dataOwnerId))
+    : projects;
+
   // ---------- cities (local autocomplete helper) ----------
 
   const addCity = (city: string) => {
@@ -680,7 +881,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         const { error } = await supabase.from('time_entries').upsert(rows);
         if (error) throw error;
       }
-      if (dataOwnerId) await fetchAll(dataOwnerId);
+      if (dataOwnerId) await fetchAll(dataOwnerId, ownerIsMember);
       toast.success('Data imported');
     } catch (error) {
       console.error('Error importing data:', error);
@@ -700,11 +901,19 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         profile,
         cities,
         loading,
+        assignments,
+        teamMembers,
+        teamEntries,
+        loggableProjects,
         viewAs: effectiveViewAs,
         readOnly,
         adminView,
         startViewAs,
         stopViewAs,
+        refreshData,
+        assignProject,
+        unassignProject,
+        setMemberProjects,
         addClient,
         updateClient,
         deleteClient,

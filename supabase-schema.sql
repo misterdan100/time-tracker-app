@@ -83,12 +83,8 @@ create policy "projects_delete_own" on public.projects
 drop policy if exists "time_entries_select_own" on public.time_entries;
 create policy "time_entries_select_own" on public.time_entries
   for select using (auth.uid() = user_id);
-drop policy if exists "time_entries_insert_own" on public.time_entries;
-create policy "time_entries_insert_own" on public.time_entries
-  for insert with check (auth.uid() = user_id);
-drop policy if exists "time_entries_update_own" on public.time_entries;
-create policy "time_entries_update_own" on public.time_entries
-  for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
+-- time_entries_insert_own / _update_own are defined in the PROJECT ASSIGNMENT section
+-- (hours only on projects you own or are assigned to).
 drop policy if exists "time_entries_delete_own" on public.time_entries;
 create policy "time_entries_delete_own" on public.time_entries
   for delete using (auth.uid() = user_id);
@@ -308,3 +304,102 @@ create policy "clients_insert_own" on public.clients
 drop policy if exists "projects_insert_own" on public.projects;
 create policy "projects_insert_own" on public.projects
   for insert with check (auth.uid() = user_id and public.is_admin());
+
+-- ============================================================
+-- PROJECT ASSIGNMENT — the lead assigns projects to members (added later — safe to re-run)
+-- ============================================================
+-- Members log hours only on projects assigned to them. If a member is unassigned they keep
+-- READ access to that project (and their hours on it) but can't log or edit hours there.
+-- Requires the TEAM section above.
+
+create table if not exists public.project_members (
+  project_id uuid not null references public.projects (id) on delete cascade,
+  user_id    uuid not null references auth.users (id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (project_id, user_id)
+);
+
+create index if not exists project_members_user_id_idx on public.project_members (user_id);
+
+alter table public.project_members enable row level security;
+revoke update, truncate on public.project_members from anon, authenticated;
+
+-- ---------- helpers (SECURITY DEFINER: no RLS recursion between projects/assignments/hours) ----------
+
+create or replace function public.owns_project(p uuid)
+returns boolean
+language sql stable security definer set search_path = ''
+as $$
+  select exists (
+    select 1 from public.projects
+    where id = p and user_id = (select auth.uid())
+  );
+$$;
+
+create or replace function public.is_assigned(p uuid)
+returns boolean
+language sql stable security definer set search_path = ''
+as $$
+  select exists (
+    select 1
+    from public.project_members pm
+    join public.team_members tm on tm.user_id = pm.user_id
+    where pm.project_id = p and pm.user_id = (select auth.uid()) and tm.active
+  );
+$$;
+
+create or replace function public.has_entries_on(p uuid)
+returns boolean
+language sql stable security definer set search_path = ''
+as $$
+  select exists (
+    select 1 from public.time_entries
+    where project_id = p and user_id = (select auth.uid())
+  );
+$$;
+
+revoke all on function public.owns_project(uuid)   from public, anon;
+revoke all on function public.is_assigned(uuid)    from public, anon;
+revoke all on function public.has_entries_on(uuid) from public, anon;
+grant execute on function public.owns_project(uuid)   to authenticated, service_role;
+grant execute on function public.is_assigned(uuid)    to authenticated, service_role;
+grant execute on function public.has_entries_on(uuid) to authenticated, service_role;
+
+-- ---------- project_members: the project owner (admin) manages assignments of their own members ----------
+
+drop policy if exists "project_members_select" on public.project_members;
+create policy "project_members_select" on public.project_members
+  for select to authenticated
+  using (user_id = (select auth.uid()) or public.owns_project(project_id));
+
+drop policy if exists "project_members_insert" on public.project_members;
+create policy "project_members_insert" on public.project_members
+  for insert to authenticated
+  with check (public.is_admin() and public.owns_project(project_id) and public.is_lead_of(user_id));
+
+drop policy if exists "project_members_delete" on public.project_members;
+create policy "project_members_delete" on public.project_members
+  for delete to authenticated
+  using (public.owns_project(project_id));
+
+-- ---------- members read assigned projects (and ones they already logged hours on) ----------
+
+drop policy if exists "projects_select_assigned" on public.projects;
+create policy "projects_select_assigned" on public.projects
+  for select to authenticated
+  using (public.is_assigned(id) or public.has_entries_on(id));
+
+-- ---------- hours only on projects you own or are assigned to ----------
+
+drop policy if exists "time_entries_insert_own" on public.time_entries;
+create policy "time_entries_insert_own" on public.time_entries
+  for insert with check (
+    auth.uid() = user_id and (public.owns_project(project_id) or public.is_assigned(project_id))
+  );
+
+drop policy if exists "time_entries_update_own" on public.time_entries;
+create policy "time_entries_update_own" on public.time_entries
+  for update using (auth.uid() = user_id)
+  with check (
+    auth.uid() = user_id and (public.owns_project(project_id) or public.is_assigned(project_id))
+  );
