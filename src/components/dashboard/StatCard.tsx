@@ -10,6 +10,8 @@ interface StatCardProps {
   icon: LucideIcon;
   tint?: StatTint;
   hint?: string;
+  /** Small muted line under the value (e.g. a breakdown). */
+  detail?: string;
 }
 
 // The card itself is a plain surface; the tint (design tokens --tint-*) colors
@@ -22,7 +24,14 @@ const TINTS: Record<StatTint, string> = {
 };
 
 /** Compact metric card: tinted icon chip, big number, label and an optional hint pill. */
-const StatCard: React.FC<StatCardProps> = ({ label, value, icon: Icon, tint = 'blue', hint }) => (
+const StatCard: React.FC<StatCardProps> = ({
+  label,
+  value,
+  icon: Icon,
+  tint = 'blue',
+  hint,
+  detail,
+}) => (
   <div className="surface flex items-center gap-4 p-4">
     <span
       className={cn(
@@ -37,6 +46,7 @@ const StatCard: React.FC<StatCardProps> = ({ label, value, icon: Icon, tint = 'b
       <div className="mt-0.5 text-2xl font-bold leading-tight tracking-tight text-foreground">
         {value}
       </div>
+      {detail && <p className="mt-0.5 truncate text-xs text-muted-foreground">{detail}</p>}
     </div>
     {hint && (
       <span className="shrink-0 self-start rounded-badge bg-muted px-2 py-0.5 text-xs font-semibold text-muted-foreground">

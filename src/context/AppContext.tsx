@@ -17,6 +17,7 @@ import {
   buildLineItems,
   formatInvoiceNumber,
   getClientEntriesInRange,
+  getClientTeamEntriesInRange,
   groupByProject,
 } from '../lib/invoiceUtils';
 import { normalizeProfile } from '../lib/profileUtils';
@@ -174,8 +175,10 @@ const rowToTimeEntry = (r: any): TimeEntry => ({
   date: r.date,
   hours: Number(r.hours),
   invoiceId: r.invoice_id ?? null,
+  leadInvoiceId: r.lead_invoice_id ?? null,
 });
 
+// lead_invoice_id is never written from here: only finalize_invoice sets it.
 const timeEntryToRow = (e: Partial<TimeEntry>): Record<string, unknown> => {
   const row: Record<string, unknown> = {};
   if (e.projectId !== undefined) row.project_id = e.projectId;
@@ -204,6 +207,7 @@ const rowToInvoice = (r: any): Invoice => ({
   createdAt: r.created_at ?? null,
   issuedAt: r.issued_at ?? null,
   paidAt: r.paid_at ?? null,
+  includeTeam: !!r.include_team,
 });
 
 const invoiceToRow = (i: Partial<Invoice>, leadId?: string | null): Record<string, unknown> => {
@@ -229,6 +233,7 @@ const invoiceToRow = (i: Partial<Invoice>, leadId?: string | null): Record<strin
   if (i.notes !== undefined) row.notes = i.notes;
   if (i.issuedAt !== undefined) row.issued_at = i.issuedAt;
   if (i.paidAt !== undefined) row.paid_at = i.paidAt;
+  if (i.includeTeam !== undefined) row.include_team = i.includeTeam;
   return row;
 };
 
@@ -273,6 +278,8 @@ const rowToTeamEntry = (r: any): TeamTimeEntry => ({
   projectId: r.project_id,
   date: r.date,
   hours: Number(r.hours),
+  invoiceId: r.invoice_id ?? null,
+  leadInvoiceId: r.lead_invoice_id ?? null,
 });
 
 /** Stand-ins for queries we skip, so Promise.all keeps one shape. */
@@ -307,6 +314,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [teamInvoices, setTeamInvoices] = useState<TeamInvoice[]>([]);
   const [teamProfiles, setTeamProfiles] = useState<Record<string, Profile>>({});
   const [loading, setLoading] = useState(false);
+
+  // What finalizeInvoice bills from. Bulk actions call it several times from one render's
+  // closure, so it reads (and patches) this ref to see hours the previous call just billed.
+  const billingData = useRef({ invoices, projects, timeEntries, teamEntries });
+  billingData.current = { invoices, projects, timeEntries, teamEntries };
 
   // Guards against a slow earlier response overwriting a newer one (e.g. switching accounts).
   const fetchSeq = useRef(0);
@@ -414,7 +426,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         memberIds.length > 0
           ? supabase
               .from('time_entries')
-              .select('id, user_id, project_id, date, hours')
+              .select('id, user_id, project_id, date, hours, invoice_id, lead_invoice_id')
               .in('user_id', memberIds)
               .order('date', { ascending: false })
           : EMPTY,
@@ -696,7 +708,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const finalizeInvoice = async (id: string, opts: MutationOpts = {}): Promise<boolean> => {
     if (blockedWhileViewing()) return false;
-    const invoice = invoices.find((i) => i.id === id);
+    const data = billingData.current;
+    const invoice = data.invoices.find((i) => i.id === id);
     if (!invoice || invoice.status !== 'draft') return false;
 
     // Re-resolve the still-unbilled entries for this client/period/projects so two
@@ -706,10 +719,22 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       invoice.clientId,
       invoice.periodStart,
       invoice.periodEnd,
-      { projects, timeEntries },
+      data,
       { onlyUnbilled: true, projectIds }
     );
-    if (entries.length === 0) {
+    // Only the admin bills team hours, on client invoices that include them.
+    const billsTeam =
+      adminView && !memberBilling && invoice.clientId !== LEAD_CLIENT_ID && !!invoice.includeTeam;
+    const teamHours = billsTeam
+      ? getClientTeamEntriesInRange(
+          invoice.clientId,
+          invoice.periodStart,
+          invoice.periodEnd,
+          data,
+          { onlyUnbilled: true, projectIds }
+        )
+      : [];
+    if (entries.length === 0 && teamHours.length === 0) {
       toast.error(`No unbilled hours left for #${formatInvoiceNumber(invoice.invoiceNumber)}`, {
         description: 'These hours may already be on another invoice.',
       });
@@ -724,49 +749,47 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       });
       return false;
     }
-    const grouped = groupByProject(entries, projects);
+    const grouped = groupByProject(entries, data.projects, teamHours);
     const { lineItems, totalHours, totalAmount } = buildLineItems(grouped, hourlyRate);
-    const issuedAt = new Date().toISOString();
+    const ownIds = entries.map((e) => e.id);
+    const teamIds = teamHours.map((e) => e.id);
 
-    const { data, error } = await supabase
-      .from('invoices')
-      .update(
-        invoiceToRow({
-          status: 'finalized',
-          issuedAt,
-          lineItems,
-          totalHours,
-          totalAmount,
-          hourlyRate,
-          currency,
-        })
-      )
-      .eq('id', id)
-      .select()
-      .single();
-    if (error) {
-      console.error('Error finalizing invoice:', error.message);
-      toast.error('Could not finalize invoice', { description: error.message });
+    // One transaction: the invoice is finalized and its hours locked together, or nothing changes.
+    const { data: row, error } = await supabase.rpc('finalize_invoice', {
+      p_invoice: id,
+      p_line_items: lineItems,
+      p_total_hours: totalHours,
+      p_total_amount: totalAmount,
+      p_hourly_rate: hourlyRate,
+      p_currency: currency,
+      p_own_entries: ownIds,
+      p_team_entries: teamIds,
+    });
+    if (error || !row) {
+      const message = error?.message ?? 'No response from the server.';
+      console.error('Error finalizing invoice:', message);
+      toast.error('Could not finalize invoice', { description: message });
       return false;
     }
 
-    const entryIds = entries.map((e) => e.id);
-    const { error: stampError } = await supabase
-      .from('time_entries')
-      .update({ invoice_id: id })
-      .in('id', entryIds);
-    if (stampError) {
-      console.error('Error locking hours:', stampError.message);
-      toast.error('Invoice finalized, but hours were not locked', {
-        description: stampError.message,
-      });
-    }
-
-    const stampedIds = new Set(entryIds);
-    setInvoices((prev) => prev.map((i) => (i.id === id ? rowToInvoice(data) : i)));
-    setTimeEntries((prev) =>
-      prev.map((te) => (stampedIds.has(te.id) ? { ...te, invoiceId: id } : te))
-    );
+    const finalized = rowToInvoice(row);
+    const ownSet = new Set(ownIds);
+    const teamSet = new Set(teamIds);
+    const markOwn = (list: TimeEntry[]) =>
+      list.map((te) => (ownSet.has(te.id) ? { ...te, invoiceId: id } : te));
+    const markTeam = (list: TeamTimeEntry[]) =>
+      list.map((te) => (teamSet.has(te.id) ? { ...te, leadInvoiceId: id } : te));
+    const markInvoice = (list: Invoice[]) => list.map((i) => (i.id === id ? finalized : i));
+    // Patch the ref right away for a bulk finalize that continues before the next render.
+    billingData.current = {
+      ...data,
+      invoices: markInvoice(data.invoices),
+      timeEntries: markOwn(data.timeEntries),
+      teamEntries: markTeam(data.teamEntries),
+    };
+    setInvoices(markInvoice);
+    setTimeEntries(markOwn);
+    setTeamEntries(markTeam);
     if (!opts.silent) toast.success('Invoice finalized');
     return true;
   };
@@ -823,10 +846,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       toast.error('Could not delete invoice', { description: error.message });
       return false;
     }
-    // DB sets time_entries.invoice_id to null (on delete set null); mirror locally.
+    // DB sets time_entries.invoice_id / lead_invoice_id to null (on delete set null); mirror locally.
     setInvoices((prev) => prev.filter((i) => i.id !== id));
     setTimeEntries((prev) =>
       prev.map((te) => (te.invoiceId === id ? { ...te, invoiceId: null } : te))
+    );
+    setTeamEntries((prev) =>
+      prev.map((te) => (te.leadInvoiceId === id ? { ...te, leadInvoiceId: null } : te))
     );
     if (!opts.silent) toast.success('Invoice deleted');
     return true;
@@ -958,6 +984,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
     // It is a draft again, which the admin doesn't list.
     setTeamInvoices((prev) => prev.filter((i) => i.id !== id));
+    setTeamEntries((prev) =>
+      prev.map((te) => (te.invoiceId === id ? { ...te, invoiceId: null } : te))
+    );
     toast.success('Invoice returned to draft', {
       description: 'Its hours are unlocked so the team member can fix and resend it.',
     });

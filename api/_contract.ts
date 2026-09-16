@@ -57,3 +57,6 @@ export const DISPLAY_NAME_MAX_LENGTH = 80;
 /** Currencies an invoice (and a member rate) can use. */
 export const INVOICE_CURRENCIES = ['COP', 'USD', 'EUR'] as const;
 export const HOURLY_RATE_MAX = 100_000_000;
+/** Why `delete` refuses (409) a member with billed hours or sent invoices. */
+export const BILLED_MEMBER_MESSAGE =
+  'This member has billed hours or invoices. Deactivate the account instead.';

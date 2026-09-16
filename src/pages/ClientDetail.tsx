@@ -71,7 +71,7 @@ const invoiceAccessors: SortAccessors<Invoice, InvoiceSortKey> = {
 const ClientDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { clients, projects, timeEntries, invoices, profile, updateClient } = useApp();
+  const { clients, projects, timeEntries, teamEntries, invoices, profile, updateClient } = useApp();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [invoiceDialogOpen, setInvoiceDialogOpen] = useState(false);
 
@@ -164,7 +164,8 @@ const ClientDetail: React.FC = () => {
     );
   }
 
-  const unbilled = computeUnbilled(client.id, { projects, timeEntries });
+  // Includes the team's hours not yet billed to this client (they are billed at the client rate).
+  const unbilled = computeUnbilled(client.id, { projects, timeEntries, teamEntries });
   const unbilledAmount = unbilled.hours * (client.defaultRate || 0);
   const lastEnd = lastInvoicedPeriodEnd(client.id, invoices);
 
@@ -228,6 +229,7 @@ const ClientDetail: React.FC = () => {
         <StatCard
           label="Unbilled hours"
           value={`${unbilled.hours.toFixed(2)}h`}
+          detail={unbilled.teamHours > 0 ? `Team ${unbilled.teamHours.toFixed(2)}h` : undefined}
           icon={Clock}
           tint="orange"
           hint={

@@ -306,8 +306,10 @@ const ProjectDetail: React.FC = () => {
                       <TableCell className="font-medium">{entry.hours.toFixed(2)}h</TableCell>
                       {canEditEntries && (
                         <TableCell className="text-right">
-                          {/* Team members' hours are read-only for the admin; billed hours are locked for members. */}
-                          {entry.own && (adminView || !entry.own.invoiceId) && (
+                          {/* Team members' hours are read-only for the admin; hours billed to the lead or
+                              to the client are locked for members. */}
+                          {entry.own &&
+                            (adminView || (!entry.own.invoiceId && !entry.own.leadInvoiceId)) && (
                             <div className="flex justify-end gap-2">
                               <Button
                                 variant="ghost"

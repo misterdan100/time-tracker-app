@@ -32,6 +32,8 @@ import {
   defaultCurrencyForCountry,
   formatCurrency,
   formatInvoiceNumber,
+  getClientProjectIds,
+  invoiceTeamHours,
   nextInvoiceNumberForClient,
   parseInvoiceNumber,
   suggestInvoicePeriod,
@@ -57,14 +59,23 @@ const InvoiceDialog: React.FC<InvoiceDialogProps> = ({
   editInvoice,
   onCreated,
 }) => {
-  const { clients, projects, timeEntries, invoices, addInvoice, updateInvoice, memberBilling } =
-    useApp();
+  const {
+    clients,
+    projects,
+    timeEntries,
+    teamEntries,
+    invoices,
+    addInvoice,
+    updateInvoice,
+    memberBilling,
+    adminView,
+  } = useApp();
   // Read latest invoices inside the open-effect without making it a dependency.
   const invoicesRef = useRef(invoices);
   invoicesRef.current = invoices;
-  // Same trick for the data the period suggestion needs.
-  const dataRef = useRef({ projects, timeEntries, invoices });
-  dataRef.current = { projects, timeEntries, invoices };
+  // Same trick for the data the period suggestion needs (team hours count as unbilled too).
+  const dataRef = useRef({ projects, timeEntries, teamEntries, invoices });
+  dataRef.current = { projects, timeEntries, teamEntries, invoices };
 
   const isEditing = !!editInvoice;
   const clientLocked = !!lockedClientId || isEditing;
@@ -79,6 +90,7 @@ const InvoiceDialog: React.FC<InvoiceDialogProps> = ({
   const [currency, setCurrency] = useState('COP');
   const [title, setTitle] = useState('');
   const [notes, setNotes] = useState('');
+  const [includeTeam, setIncludeTeam] = useState(true);
   const [startOpen, setStartOpen] = useState(false);
   const [endOpen, setEndOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -102,6 +114,7 @@ const InvoiceDialog: React.FC<InvoiceDialogProps> = ({
       setCurrency(editInvoice.currency);
       setTitle(editInvoice.title);
       setNotes(editInvoice.notes);
+      setIncludeTeam(!!editInvoice.includeTeam);
       setSelection(new Set(editInvoice.lineItems.map((li) => li.projectId)));
       const n = parseInvoiceNumber(editInvoice.invoiceNumber);
       setInvoiceNumber(Number.isNaN(n) ? '' : String(n));
@@ -118,6 +131,7 @@ const InvoiceDialog: React.FC<InvoiceDialogProps> = ({
       setCurrency('COP');
       setTitle('');
       setNotes('');
+      setIncludeTeam(true);
       setSelection(null);
       setInvoiceNumber(cid ? String(nextInvoiceNumberForClient(cid, invoicesRef.current)) : '');
     }
@@ -142,6 +156,14 @@ const InvoiceDialog: React.FC<InvoiceDialogProps> = ({
     setCurrency(memberBilling.currency);
   }, [open, billingLead, memberBilling, editInvoice]);
 
+  // The admin can bill their team's hours on a client's projects (once the team logged any there).
+  const teamAvailable = useMemo(() => {
+    if (!adminView || !clientId || billingLead) return false;
+    const ids = new Set(getClientProjectIds(clientId, projects));
+    return teamEntries.some((e) => ids.has(e.projectId));
+  }, [adminView, clientId, billingLead, projects, teamEntries]);
+  const billTeam = teamAvailable && includeTeam;
+
   // Projects (of the client) that have unbilled hours in the chosen range.
   const breakdown = useMemo(
     () =>
@@ -150,11 +172,11 @@ const InvoiceDialog: React.FC<InvoiceDialogProps> = ({
             clientId,
             periodStart,
             periodEnd,
-            { projects, timeEntries },
-            { onlyUnbilled: true }
+            { projects, timeEntries, teamEntries },
+            { onlyUnbilled: true, includeTeam: billTeam }
           )
         : [],
-    [clientId, periodStart, periodEnd, projects, timeEntries]
+    [clientId, periodStart, periodEnd, projects, timeEntries, teamEntries, billTeam]
   );
 
   // Selection is reset to "all" only on user-driven client/period changes (below),
@@ -197,11 +219,18 @@ const InvoiceDialog: React.FC<InvoiceDialogProps> = ({
     setPeriodEnd(endOfMonth(ref).toISOString());
     setSelection(null);
   };
+  const toggleIncludeTeam = () => {
+    setIncludeTeam((prev) => !prev);
+    setSelection(null);
+  };
 
   // Explain where the suggested range comes from (create mode only).
   const suggested = useMemo(
-    () => (clientId ? suggestInvoicePeriod(clientId, { projects, timeEntries, invoices }) : null),
-    [clientId, projects, timeEntries, invoices]
+    () =>
+      clientId
+        ? suggestInvoicePeriod(clientId, { projects, timeEntries, teamEntries, invoices })
+        : null,
+    [clientId, projects, timeEntries, teamEntries, invoices]
   );
   const fmtDate = (iso: string) => format(new Date(iso), 'dd/MM/yyyy', { locale: enUS });
   const suggestionHint = (() => {
@@ -220,6 +249,7 @@ const InvoiceDialog: React.FC<InvoiceDialogProps> = ({
   const rate = parseFloat(hourlyRate) || 0;
   const selectedBreakdown = breakdown.filter((b) => isSelected(b.projectId));
   const { lineItems, totalHours, totalAmount } = buildLineItems(selectedBreakdown, rate);
+  const totalTeamHours = invoiceTeamHours(lineItems);
 
   // ----- per-client invoice number validation -----
   const existingNumbers = useMemo(
@@ -252,6 +282,7 @@ const InvoiceDialog: React.FC<InvoiceDialogProps> = ({
       totalAmount,
       lineItems,
       notes: notes.trim(),
+      includeTeam: billTeam,
     };
     if (editInvoice) {
       await updateInvoice(editInvoice.id, payload);
@@ -415,7 +446,20 @@ const InvoiceDialog: React.FC<InvoiceDialogProps> = ({
 
             {/* Projects */}
             <div className="grid gap-2">
-              <Label>Projects (unbilled hours in range)</Label>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <Label>Projects (unbilled hours in range)</Label>
+                {teamAvailable ? (
+                  <label className="flex cursor-pointer items-center gap-2 text-sm font-medium">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 accent-primary"
+                      checked={includeTeam}
+                      onChange={toggleIncludeTeam}
+                    />
+                    Include team hours
+                  </label>
+                ) : null}
+              </div>
               {!clientId ? (
                 <p className="rounded-xl border border-border/60 px-3 py-4 text-sm text-muted-foreground">
                   Select a client to see its projects.
@@ -442,11 +486,25 @@ const InvoiceDialog: React.FC<InvoiceDialogProps> = ({
                         />
                         <span className="text-sm font-medium">{b.projectName}</span>
                       </span>
-                      <span className="text-sm text-muted-foreground">{b.hours.toFixed(2)}h</span>
+                      <span className="text-right text-sm text-muted-foreground">
+                        {b.hours.toFixed(2)}h
+                        {b.teamHours > 0 ? (
+                          <span className="block text-xs">
+                            you {(b.hours - b.teamHours).toFixed(2)}h · team {b.teamHours.toFixed(2)}h
+                          </span>
+                        ) : null}
+                      </span>
                     </label>
                   ))}
                 </div>
               )}
+              {teamAvailable ? (
+                <p className="text-xs text-muted-foreground">
+                  {includeTeam
+                    ? "Your team's hours not yet billed to this client are added at this rate. The client only sees the total per project."
+                    : "Only your own hours are billed. Your team's hours stay unbilled."}
+                </p>
+              ) : null}
             </div>
 
             {/* Rate + currency */}
@@ -532,6 +590,11 @@ const InvoiceDialog: React.FC<InvoiceDialogProps> = ({
                     <span>{totalHours.toFixed(2)}h total</span>
                     <span>{formatCurrency(totalAmount, currency)}</span>
                   </div>
+                  {totalTeamHours > 0 ? (
+                    <p className="text-xs text-muted-foreground">
+                      Includes {totalTeamHours.toFixed(2)}h logged by your team.
+                    </p>
+                  ) : null}
                 </div>
               )}
             </div>

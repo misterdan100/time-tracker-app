@@ -46,10 +46,14 @@ import MemberProjectsDialog, {
   type MemberProjectsTarget,
 } from '../components/dialogs/MemberProjectsDialog';
 import { useApp } from '../context/AppContext';
-import { adminApi, errorMessage } from '../lib/adminApi';
+import { AdminApiError, adminApi, errorMessage } from '../lib/adminApi';
 import { dateSortValue, SortAccessors, useSort } from '../lib/sort';
 import { formatCurrency } from '../lib/invoiceUtils';
-import { DISPLAY_NAME_MAX_LENGTH, type AdminUser } from '../../api/_contract';
+import {
+  BILLED_MEMBER_MESSAGE,
+  DISPLAY_NAME_MAX_LENGTH,
+  type AdminUser,
+} from '../../api/_contract';
 
 type TeamSortKey = 'name' | 'status' | 'lastSignIn' | 'projects' | 'rate' | 'hours';
 
@@ -66,7 +70,8 @@ const fmtSignIn = (iso: string | null) => {
 
 const AdminTeam: React.FC = () => {
   const navigate = useNavigate();
-  const { viewAs, startViewAs, stopViewAs, assignments, teamEntries, refreshData } = useApp();
+  const { viewAs, startViewAs, stopViewAs, assignments, teamEntries, teamInvoices, refreshData } =
+    useApp();
 
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(true);
@@ -81,6 +86,8 @@ const AdminTeam: React.FC = () => {
   const [activeTarget, setActiveTarget] = useState<AdminUser | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<AdminUser | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState('');
+  // Set when the server refuses the delete (billing history the local data didn't show).
+  const [deleteRefused, setDeleteRefused] = useState('');
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
@@ -187,7 +194,23 @@ const AdminTeam: React.FC = () => {
 
   const openDelete = (u: AdminUser) => {
     setDeleteConfirm('');
+    setDeleteRefused('');
     setDeleteTarget(u);
+  };
+
+  // Hours billed to you or to a client, or invoices they sent you: deleting would erase billed history.
+  const deleteHasBilling =
+    !!deleteTarget &&
+    (teamEntries.some(
+      (e) => e.userId === deleteTarget.id && (e.invoiceId || e.leadInvoiceId)
+    ) ||
+      teamInvoices.some((i) => i.userId === deleteTarget.id));
+  const deleteBlocked = deleteHasBilling || !!deleteRefused;
+
+  const deactivateInstead = () => {
+    const target = deleteTarget;
+    setDeleteTarget(null);
+    setActiveTarget(target);
   };
 
   const confirmDelete = async () => {
@@ -201,7 +224,8 @@ const AdminTeam: React.FC = () => {
       toast.success('Account deleted');
       setDeleteTarget(null);
     } catch (err) {
-      toast.error('Could not delete the account', { description: errorMessage(err) });
+      if (err instanceof AdminApiError && err.status === 409) setDeleteRefused(err.message);
+      else toast.error('Could not delete the account', { description: errorMessage(err) });
     } finally {
       setBusy(false);
     }
@@ -505,36 +529,70 @@ const AdminTeam: React.FC = () => {
       <Dialog open={!!deleteTarget} onOpenChange={(open) => !open && !busy && setDeleteTarget(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Delete account permanently?</DialogTitle>
+            <DialogTitle>
+              {deleteBlocked ? 'This account can’t be deleted' : 'Delete account permanently?'}
+            </DialogTitle>
             <DialogDescription>
-              This deletes the login of{' '}
-              <span className="font-semibold text-foreground">
-                {deleteTarget ? displayName(deleteTarget) : ''}
-              </span>{' '}
-              and <span className="font-semibold text-foreground">all of their data</span> (hours,
-              invoices, profile). Your own data is not affected. This cannot be undone — to keep
-              their history, deactivate the account instead.
+              {deleteBlocked ? (
+                <>
+                  Deleting{' '}
+                  <span className="font-semibold text-foreground">
+                    {deleteTarget ? displayName(deleteTarget) : ''}
+                  </span>{' '}
+                  would also erase hours and invoices that were already billed.
+                </>
+              ) : (
+                <>
+                  This deletes the login of{' '}
+                  <span className="font-semibold text-foreground">
+                    {deleteTarget ? displayName(deleteTarget) : ''}
+                  </span>{' '}
+                  and <span className="font-semibold text-foreground">all of their data</span>{' '}
+                  (hours, invoices, profile). Your own data is not affected. This cannot be undone —
+                  to keep their history, deactivate the account instead.
+                </>
+              )}
             </DialogDescription>
           </DialogHeader>
-          <div className="grid gap-2">
-            <Label htmlFor="deleteConfirm">
-              Type <span className="font-mono">{deleteTarget?.email}</span> to confirm
-            </Label>
-            <Input
-              id="deleteConfirm"
-              value={deleteConfirm}
-              onChange={(e) => setDeleteConfirm(e.target.value)}
-              autoComplete="off"
-              disabled={busy}
-            />
-          </div>
+          {deleteBlocked ? (
+            <Callout tone="warning">
+              {deleteTarget?.membership?.active === false
+                ? 'This member has billed hours or invoices. The account is already deactivated, which keeps their history.'
+                : deleteRefused || BILLED_MEMBER_MESSAGE}
+            </Callout>
+          ) : (
+            <div className="grid gap-2">
+              <Label htmlFor="deleteConfirm">
+                Type <span className="font-mono">{deleteTarget?.email}</span> to confirm
+              </Label>
+              <Input
+                id="deleteConfirm"
+                value={deleteConfirm}
+                onChange={(e) => setDeleteConfirm(e.target.value)}
+                autoComplete="off"
+                disabled={busy}
+              />
+            </div>
+          )}
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setDeleteTarget(null)} disabled={busy}>
-              Cancel
+              {deleteBlocked ? 'Close' : 'Cancel'}
             </Button>
-            <Button variant="destructive" onClick={confirmDelete} disabled={busy || !deleteMatches}>
-              {busy ? 'Deleting…' : 'Delete account'}
-            </Button>
+            {deleteBlocked ? (
+              deleteTarget?.membership?.active !== false ? (
+                <Button variant="destructive" onClick={deactivateInstead}>
+                  Deactivate instead
+                </Button>
+              ) : null
+            ) : (
+              <Button
+                variant="destructive"
+                onClick={confirmDelete}
+                disabled={busy || !deleteMatches}
+              >
+                {busy ? 'Deleting…' : 'Delete account'}
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

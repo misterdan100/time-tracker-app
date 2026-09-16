@@ -83,9 +83,10 @@ create policy "projects_delete_own" on public.projects
 drop policy if exists "time_entries_select_own" on public.time_entries;
 create policy "time_entries_select_own" on public.time_entries
   for select using (auth.uid() = user_id);
--- time_entries_insert_own / _update_own are defined in the PROJECT ASSIGNMENT section
+-- time_entries_insert_own is defined in the PROJECT ASSIGNMENT section
 -- (hours only on projects you own or are assigned to).
--- time_entries_delete_own is defined in the MEMBER INVOICES section (members can't delete billed hours).
+-- time_entries_update_own / _delete_own are (re)defined in the TEAM HOURS IN CLIENT INVOICES section
+-- (members can't change billed hours).
 
 -- ============================================================
 -- INVOICES (added later — safe to re-run)
@@ -387,7 +388,7 @@ create policy "time_entries_insert_own" on public.time_entries
     auth.uid() = user_id and (public.owns_project(project_id) or public.is_assigned(project_id))
   );
 
--- time_entries_update_own is redefined in the MEMBER INVOICES section.
+-- time_entries_update_own is redefined in the TEAM HOURS IN CLIENT INVOICES section.
 
 -- ============================================================
 -- MEMBER INVOICES — members bill their lead (added later — safe to re-run)
@@ -478,24 +479,8 @@ create policy "invoices_delete_own" on public.invoices
   for delete using (auth.uid() = user_id and (public.is_admin() or status = 'draft'));
 
 -- ---------- billed hours are locked for members ----------
--- (has_entries_on lets a member still invoice hours on a project they were removed from.)
-
-drop policy if exists "time_entries_update_own" on public.time_entries;
-create policy "time_entries_update_own" on public.time_entries
-  for update
-  using (auth.uid() = user_id and (invoice_id is null or public.is_admin()))
-  with check (
-    auth.uid() = user_id
-    and (
-      public.owns_project(project_id)
-      or public.is_assigned(project_id)
-      or public.has_entries_on(project_id)
-    )
-  );
-
-drop policy if exists "time_entries_delete_own" on public.time_entries;
-create policy "time_entries_delete_own" on public.time_entries
-  for delete using (auth.uid() = user_id and (invoice_id is null or public.is_admin()));
+-- time_entries_update_own / _delete_own are defined in the TEAM HOURS IN CLIENT INVOICES section
+-- (hours billed to the lead OR to the client are locked for members).
 
 -- ---------- members read their lead's profile (the "Bill to" block) ----------
 
@@ -548,3 +533,158 @@ revoke all on function public.mark_team_invoice_paid(uuid) from public, anon;
 revoke all on function public.return_team_invoice(uuid)    from public, anon;
 grant execute on function public.mark_team_invoice_paid(uuid) to authenticated;
 grant execute on function public.return_team_invoice(uuid)    to authenticated;
+
+-- ============================================================
+-- TEAM HOURS IN CLIENT INVOICES — the lead bills the team's hours to clients (added later — safe to re-run)
+-- ============================================================
+-- A lead's client invoice can also bill the hours their members logged on that client's projects,
+-- at the invoice rate and merged into the per-project lines (the client can't tell them apart).
+-- time_entries.lead_invoice_id links such an hour to the lead's client invoice; invoice_id keeps
+-- linking it to the member -> lead invoice, so one hour can be on both. Finalizing ANY invoice is
+-- now a single atomic call (finalize_invoice).
+-- Requires the TEAM, PROJECT ASSIGNMENT and MEMBER INVOICES sections above.
+
+-- ---------- link a member's hour to the client invoice that billed it ----------
+-- Deleting that invoice releases the hour (FK actions run as the table owner, past RLS).
+
+alter table public.time_entries
+  add column if not exists lead_invoice_id uuid references public.invoices (id) on delete set null;
+create index if not exists time_entries_lead_invoice_idx on public.time_entries (lead_invoice_id);
+
+-- Whether a client invoice bills the team's hours too (finalize re-resolves them).
+alter table public.invoices
+  add column if not exists include_team boolean not null default false;
+
+-- ---------- hours billed to the lead OR to the client are locked for members ----------
+-- (has_entries_on lets a member still invoice hours on a project they were removed from.)
+
+drop policy if exists "time_entries_update_own" on public.time_entries;
+create policy "time_entries_update_own" on public.time_entries
+  for update
+  using (
+    auth.uid() = user_id
+    and ((invoice_id is null and lead_invoice_id is null) or public.is_admin())
+  )
+  with check (
+    auth.uid() = user_id
+    and (
+      public.owns_project(project_id)
+      or public.is_assigned(project_id)
+      or public.has_entries_on(project_id)
+    )
+  );
+
+drop policy if exists "time_entries_delete_own" on public.time_entries;
+create policy "time_entries_delete_own" on public.time_entries
+  for delete using (
+    auth.uid() = user_id
+    and ((invoice_id is null and lead_invoice_id is null) or public.is_admin())
+  );
+
+-- ---------- atomic finalize (admin -> client and member -> lead) ----------
+-- The app computes the line items and totals. This checks who may finalize what, the member's
+-- rate and that the totals match the hours, then finalizes the invoice and locks its hours in ONE
+-- transaction: any exception rolls everything back, so nothing is ever half-finalized.
+
+create or replace function public.finalize_invoice(
+  p_invoice      uuid,
+  p_line_items   jsonb,
+  p_total_hours  numeric,
+  p_total_amount numeric,
+  p_hourly_rate  numeric,
+  p_currency     text,
+  p_own_entries  uuid[],
+  p_team_entries uuid[] default '{}'
+)
+returns public.invoices
+language plpgsql security definer set search_path = ''
+as $$
+declare
+  me     uuid := (select auth.uid());
+  inv    public.invoices%rowtype;
+  n      integer;
+  billed numeric;
+begin
+  p_own_entries  := coalesce(p_own_entries, '{}');
+  p_team_entries := coalesce(p_team_entries, '{}');
+
+  -- SECURITY DEFINER skips RLS: every ownership rule is checked here.
+  select * into inv from public.invoices where id = p_invoice for update;
+  if not found or me is null or inv.user_id <> me or inv.status <> 'draft' then
+    raise exception 'Invoice not found or it is not a draft.';
+  end if;
+
+  if inv.client_id is not null then
+    if not public.owns_client(inv.client_id) then
+      raise exception 'Invoice not found or it is not a draft.';
+    end if;
+  else
+    -- A member bills their current lead, always at the rate the lead set.
+    if inv.bill_to_user_id is distinct from public.my_lead_id() then
+      raise exception 'This invoice is not addressed to your team lead.';
+    end if;
+    if not exists (
+      select 1 from public.team_members
+      where user_id = me and hourly_rate > 0 and hourly_rate = p_hourly_rate and currency = p_currency
+    ) then
+      raise exception 'Your hourly rate changed or is not set. Reload and try again.';
+    end if;
+  end if;
+
+  if cardinality(p_team_entries) > 0 and (inv.client_id is null or not public.is_admin()) then
+    raise exception 'Team hours can only be billed on your client invoices.';
+  end if;
+  if cardinality(p_own_entries) + cardinality(p_team_entries) = 0 then
+    raise exception 'This invoice has no hours to bill.';
+  end if;
+
+  update public.time_entries
+     set invoice_id = p_invoice
+   where id = any (p_own_entries)
+     and user_id = me
+     and invoice_id is null;
+  get diagnostics n = row_count;
+  if n <> cardinality(p_own_entries) then
+    raise exception 'Some hours were already billed on another invoice. Reload and try again.';
+  end if;
+
+  -- Only unbilled hours of members you lead, on your projects of this invoice's client.
+  update public.time_entries te
+     set lead_invoice_id = p_invoice
+    from public.projects p
+   where te.id = any (p_team_entries)
+     and te.lead_invoice_id is null
+     and public.is_lead_of(te.user_id)
+     and p.id = te.project_id
+     and p.user_id = me
+     and p.client_id = inv.client_id;
+  get diagnostics n = row_count;
+  if n <> cardinality(p_team_entries) then
+    raise exception 'Some team hours were already billed or are not yours to bill. Reload and try again.';
+  end if;
+
+  -- The totals must be exactly the locked hours at the invoice rate (small float tolerance).
+  select coalesce(sum(hours), 0) into billed
+    from public.time_entries
+   where id = any (p_own_entries) or id = any (p_team_entries);
+  if abs(billed - p_total_hours) > 0.001
+     or abs(p_total_amount - p_total_hours * p_hourly_rate) > 0.01 then
+    raise exception 'The invoice totals do not match its hours. Reload and try again.';
+  end if;
+
+  update public.invoices
+     set status       = 'finalized',
+         issued_at    = to_char(now() at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
+         line_items   = p_line_items,
+         total_hours  = p_total_hours,
+         total_amount = p_total_amount,
+         hourly_rate  = p_hourly_rate,
+         currency     = p_currency
+   where id = p_invoice
+  returning * into inv;
+  return inv;
+end;
+$$;
+
+revoke all on function public.finalize_invoice(uuid, jsonb, numeric, numeric, numeric, text, uuid[], uuid[]) from public, anon;
+grant execute on function public.finalize_invoice(uuid, jsonb, numeric, numeric, numeric, text, uuid[], uuid[]) to authenticated;

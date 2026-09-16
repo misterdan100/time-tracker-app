@@ -24,7 +24,7 @@ import StatCard from '../components/dashboard/StatCard';
 import InvoiceStatusBadge from '../components/invoice/InvoiceStatusBadge';
 import InvoiceDialog from '../components/dialogs/InvoiceDialog';
 import { downloadInvoice } from '../lib/downloadInvoice';
-import { formatCurrency, formatInvoiceNumber } from '../lib/invoiceUtils';
+import { formatCurrency, formatInvoiceNumber, invoiceTeamHours } from '../lib/invoiceUtils';
 import {
   ArrowLeft,
   Clock,
@@ -104,6 +104,10 @@ const InvoiceDetail: React.FC = () => {
       </div>
     );
   }
+
+  // In-app only: how much of the invoice your team worked (the PDF shows combined hours).
+  const teamHours = adminView ? invoiceTeamHours(invoice.lineItems) : 0;
+  const billsTeam = adminView && !!invoice.includeTeam;
 
   const handleDownload = async () => {
     try {
@@ -196,7 +200,17 @@ const InvoiceDetail: React.FC = () => {
 
       {/* Metrics */}
       <div className="grid gap-4 sm:grid-cols-3">
-        <StatCard label="Total hours" value={`${invoice.totalHours.toFixed(2)}h`} icon={Clock} tint="blue" />
+        <StatCard
+          label="Total hours"
+          value={`${invoice.totalHours.toFixed(2)}h`}
+          icon={Clock}
+          tint="blue"
+          detail={
+            teamHours > 0
+              ? `You ${(invoice.totalHours - teamHours).toFixed(2)}h · Team ${teamHours.toFixed(2)}h`
+              : undefined
+          }
+        />
         <StatCard
           label="Total amount"
           value={formatCurrency(invoice.totalAmount, invoice.currency)}
@@ -273,7 +287,14 @@ const InvoiceDetail: React.FC = () => {
               <TableBody>
                 {sortedLines.map((li) => (
                   <TableRow key={li.projectId}>
-                    <TableCell className="font-medium">{li.projectName}</TableCell>
+                    <TableCell className="font-medium">
+                      {li.projectName}
+                      {adminView && li.teamHours ? (
+                        <span className="block text-xs font-normal text-muted-foreground">
+                          includes {li.teamHours.toFixed(2)}h from your team
+                        </span>
+                      ) : null}
+                    </TableCell>
                     <TableCell className="text-right">{li.hours.toFixed(2)}h</TableCell>
                     <TableCell className="hidden text-right sm:table-cell">
                       {formatCurrency(invoice.hourlyRate, invoice.currency)}
@@ -310,7 +331,9 @@ const InvoiceDetail: React.FC = () => {
               {confirm === 'finalize'
                 ? isMemberInvoice
                   ? 'This sends the invoice to your team lead and locks its hours. After that you can no longer edit or delete it; your lead marks it paid or returns it to you if something needs fixing.'
-                  : 'This locks the hours in this period so they cannot be billed on another invoice. It re-checks for any hours already billed elsewhere before finalizing.'
+                  : billsTeam
+                    ? "This locks the hours in this period (yours and your team's) so they cannot be billed on another invoice, and your team can no longer edit them. It re-checks for any hours already billed elsewhere before finalizing."
+                    : 'This locks the hours in this period so they cannot be billed on another invoice. It re-checks for any hours already billed elsewhere before finalizing.'
                 : `This will permanently delete #${formatInvoiceNumber(invoice.invoiceNumber)}.${
                     invoice.status !== 'draft'
                       ? ' Its hours will be released back to uninvoiced.'

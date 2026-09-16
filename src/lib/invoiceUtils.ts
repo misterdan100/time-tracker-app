@@ -1,17 +1,33 @@
 import { addDays, endOfDay, isWithinInterval, parseISO, startOfDay, startOfMonth } from 'date-fns';
-import { Country, Invoice, InvoiceLineItem, InvoiceStatus, Project, TimeEntry } from '../types';
+import {
+  Country,
+  Invoice,
+  InvoiceLineItem,
+  InvoiceStatus,
+  Project,
+  TeamTimeEntry,
+  TimeEntry,
+} from '../types';
 
 /** The slice of app state these helpers need. */
 export interface DataSlice {
   projects: Project[];
   timeEntries: TimeEntry[];
+  /** Admin only: hours logged by their team. Omit (or leave empty) to ignore team hours. */
+  teamEntries?: TeamTimeEntry[];
 }
+
+/** What grouping needs from an hour, own or team. */
+type HourEntry = Pick<TimeEntry, 'id' | 'projectId' | 'hours'>;
 
 export interface ProjectBreakdown {
   projectId: string;
   projectName: string;
+  /** Own + team hours. */
   hours: number;
   entryIds: string[];
+  /** Part of `hours` logged by the team (0 when team hours are not included). */
+  teamHours: number;
 }
 
 // ---------- currency ----------
@@ -52,6 +68,33 @@ export function getClientProjectIds(clientId: string, projects: Project[]): stri
   return projects.filter((p) => p.clientId === clientId).map((p) => p.id);
 }
 
+interface RangeOpts {
+  onlyUnbilled?: boolean;
+  projectIds?: string[];
+}
+
+function entriesInRange<T extends { projectId: string; date: string }>(
+  entries: T[],
+  isBilled: (entry: T) => boolean,
+  clientId: string,
+  startISO: string,
+  endISO: string,
+  projects: Project[],
+  opts: RangeOpts
+): T[] {
+  const start = startOfDay(parseISO(startISO));
+  const end = endOfDay(parseISO(endISO));
+  if (start > end) return [];
+
+  const allowed = new Set(opts.projectIds ?? getClientProjectIds(clientId, projects));
+
+  return entries.filter((e) => {
+    if (!allowed.has(e.projectId)) return false;
+    if (opts.onlyUnbilled && isBilled(e)) return false;
+    return isWithinInterval(parseISO(e.date), { start, end });
+  });
+}
+
 /**
  * Time entries for a client's projects within [start, end] (inclusive of both
  * full days). Optionally restrict to specific projects and/or unbilled entries.
@@ -61,40 +104,76 @@ export function getClientEntriesInRange(
   startISO: string,
   endISO: string,
   data: DataSlice,
-  opts: { onlyUnbilled?: boolean; projectIds?: string[] } = {}
+  opts: RangeOpts = {}
 ): TimeEntry[] {
-  const start = startOfDay(parseISO(startISO));
-  const end = endOfDay(parseISO(endISO));
-  if (start > end) return [];
+  return entriesInRange(
+    data.timeEntries,
+    (e) => !!e.invoiceId,
+    clientId,
+    startISO,
+    endISO,
+    data.projects,
+    opts
+  );
+}
 
-  const allowed = new Set(opts.projectIds ?? getClientProjectIds(clientId, data.projects));
-
-  return data.timeEntries.filter((e) => {
-    if (!allowed.has(e.projectId)) return false;
-    if (opts.onlyUnbilled && e.invoiceId) return false;
-    return isWithinInterval(parseISO(e.date), { start, end });
-  });
+/**
+ * The team's hours on a client's projects within [start, end]. "Unbilled" means not yet billed
+ * to the CLIENT (no leadInvoiceId), whether or not the member already invoiced the lead.
+ */
+export function getClientTeamEntriesInRange(
+  clientId: string,
+  startISO: string,
+  endISO: string,
+  data: DataSlice,
+  opts: RangeOpts = {}
+): TeamTimeEntry[] {
+  return entriesInRange(
+    data.teamEntries ?? [],
+    (e) => !!e.leadInvoiceId,
+    clientId,
+    startISO,
+    endISO,
+    data.projects,
+    opts
+  );
 }
 
 // ---------- grouping / line items ----------
 
-export function groupByProject(entries: TimeEntry[], projects: Project[]): ProjectBreakdown[] {
+/** Group own hours (and optionally the team's) into one row per project. */
+export function groupByProject(
+  entries: HourEntry[],
+  projects: Project[],
+  teamEntries: HourEntry[] = []
+): ProjectBreakdown[] {
   const nameById = new Map(projects.map((p) => [p.id, p.name]));
   const byProject = new Map<string, ProjectBreakdown>();
 
-  for (const entry of entries) {
-    const existing = byProject.get(entry.projectId);
-    if (existing) {
-      existing.hours += entry.hours;
-      existing.entryIds.push(entry.id);
-    } else {
-      byProject.set(entry.projectId, {
-        projectId: entry.projectId,
-        projectName: nameById.get(entry.projectId) ?? 'Unknown project',
-        hours: entry.hours,
-        entryIds: [entry.id],
-      });
+  const rowFor = (projectId: string) => {
+    let row = byProject.get(projectId);
+    if (!row) {
+      row = {
+        projectId,
+        projectName: nameById.get(projectId) ?? 'Unknown project',
+        hours: 0,
+        entryIds: [],
+        teamHours: 0,
+      };
+      byProject.set(projectId, row);
     }
+    return row;
+  };
+
+  for (const entry of entries) {
+    const row = rowFor(entry.projectId);
+    row.hours += entry.hours;
+    row.entryIds.push(entry.id);
+  }
+  for (const entry of teamEntries) {
+    const row = rowFor(entry.projectId);
+    row.hours += entry.hours;
+    row.teamHours += entry.hours;
   }
 
   return Array.from(byProject.values()).sort((a, b) =>
@@ -114,53 +193,78 @@ export function buildLineItems(grouped: ProjectBreakdown[], hourlyRate: number):
     projectName: g.projectName,
     hours: g.hours,
     amount: g.hours * hourlyRate,
+    // Only stored when there are team hours, so invoices without them keep today's shape.
+    ...(g.teamHours > 0 ? { teamHours: g.teamHours } : {}),
   }));
   const totalHours = lineItems.reduce((sum, li) => sum + li.hours, 0);
   const totalAmount = lineItems.reduce((sum, li) => sum + li.amount, 0);
   return { lineItems, totalHours, totalAmount };
 }
 
-/** Per-project unbilled breakdown for a client in a range (used by the create dialog). */
+/** Sum of the team's part across an invoice's lines. */
+export function invoiceTeamHours(lineItems: InvoiceLineItem[]): number {
+  return lineItems.reduce((sum, li) => sum + (li.teamHours ?? 0), 0);
+}
+
+/**
+ * Per-project unbilled breakdown for a client in a range (used by the create dialog).
+ * `includeTeam` adds the team's hours not yet billed to the client.
+ */
 export function clientProjectsBreakdown(
   clientId: string,
   startISO: string,
   endISO: string,
   data: DataSlice,
-  opts: { onlyUnbilled?: boolean } = { onlyUnbilled: true }
+  opts: { onlyUnbilled?: boolean; includeTeam?: boolean } = { onlyUnbilled: true }
 ): ProjectBreakdown[] {
   const entries = getClientEntriesInRange(clientId, startISO, endISO, data, {
     onlyUnbilled: opts.onlyUnbilled,
   });
-  return groupByProject(entries, data.projects);
+  const teamEntries = opts.includeTeam
+    ? getClientTeamEntriesInRange(clientId, startISO, endISO, data, {
+        onlyUnbilled: opts.onlyUnbilled,
+      })
+    : [];
+  return groupByProject(entries, data.projects, teamEntries);
 }
 
 // ---------- billing status across all time ----------
 
 export interface UnbilledSummary {
+  /** Own + team hours. */
   hours: number;
+  /** Part of `hours` logged by the team (0 without `data.teamEntries`). */
+  teamHours: number;
   earliestDate: string | null; // ISO of oldest unbilled entry
   latestDate: string | null; // ISO of newest unbilled entry
 }
 
-/** All-time unbilled hours for a client (entries with no invoiceId). */
+/**
+ * All-time unbilled hours for a client: own entries with no invoiceId plus, when
+ * `data.teamEntries` is given, team entries not yet billed to the client.
+ */
 export function computeUnbilled(clientId: string, data: DataSlice): UnbilledSummary {
   const projectIds = new Set(getClientProjectIds(clientId, data.projects));
-  const entries = data.timeEntries.filter(
-    (e) => projectIds.has(e.projectId) && !e.invoiceId
+  const own = data.timeEntries.filter((e) => projectIds.has(e.projectId) && !e.invoiceId);
+  const team = (data.teamEntries ?? []).filter(
+    (e) => projectIds.has(e.projectId) && !e.leadInvoiceId
   );
 
   let hours = 0;
+  let teamHours = 0;
   let earliest: number | null = null;
   let latest: number | null = null;
-  for (const e of entries) {
+  for (const e of [...own, ...team]) {
     hours += e.hours;
     const t = parseISO(e.date).getTime();
     if (earliest === null || t < earliest) earliest = t;
     if (latest === null || t > latest) latest = t;
   }
+  for (const e of team) teamHours += e.hours;
 
   return {
     hours,
+    teamHours,
     earliestDate: earliest === null ? null : new Date(earliest).toISOString(),
     latestDate: latest === null ? null : new Date(latest).toISOString(),
   };
@@ -235,6 +339,7 @@ export interface SuggestedPeriod {
  * invoice: from the day after the latest invoice period end (drafts included),
  * pulled back to the oldest unbilled entry that no draft already covers,
  * through today. Falls back to the current month when there is nothing to go on.
+ * Team hours not yet billed to the client count too when `data.teamEntries` is given.
  */
 export function suggestInvoicePeriod(
   clientId: string,
@@ -259,8 +364,12 @@ export function suggestInvoicePeriod(
 
   const projectIds = new Set(getClientProjectIds(clientId, data.projects));
   let earliestUncovered: Date | null = null;
-  for (const e of data.timeEntries) {
-    if (!projectIds.has(e.projectId) || e.invoiceId) continue;
+  const unbilled = [
+    ...data.timeEntries.filter((e) => !e.invoiceId),
+    ...(data.teamEntries ?? []).filter((e) => !e.leadInvoiceId),
+  ];
+  for (const e of unbilled) {
+    if (!projectIds.has(e.projectId)) continue;
     const d = parseISO(e.date);
     if (Number.isNaN(d.getTime())) continue;
     if (draftRanges.some((r) => isWithinInterval(d, r))) continue;

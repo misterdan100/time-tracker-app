@@ -10,6 +10,7 @@
 
 import { createClient, type SupabaseClient, type User } from '@supabase/supabase-js';
 import {
+  BILLED_MEMBER_MESSAGE,
   DISPLAY_NAME_MAX_LENGTH,
   HOURLY_RATE_MAX,
   INVOICE_CURRENCIES,
@@ -289,6 +290,23 @@ async function deleteMember(admin: SupabaseClient, caller: User, body: Record<st
   const confirmEmail = requireString(body.confirmEmail, 'confirmEmail').trim().toLowerCase();
   if (!user.email || confirmEmail !== user.email.toLowerCase()) {
     throw new HttpError(400, 'Type the account email exactly to confirm.');
+  }
+  // Deleting cascades their hours, including ones already billed to the lead or to a client,
+  // so accounts with billing history can only be deactivated.
+  const [billedHours, sentInvoices] = await Promise.all([
+    admin
+      .from('time_entries')
+      .select('id')
+      .eq('user_id', user.id)
+      .or('invoice_id.not.is.null,lead_invoice_id.not.is.null')
+      .limit(1),
+    admin.from('invoices').select('id').eq('user_id', user.id).neq('status', 'draft').limit(1),
+  ]);
+  if (billedHours.error || sentInvoices.error) {
+    throw new HttpError(500, 'Could not check the account billing history.');
+  }
+  if ((billedHours.data ?? []).length > 0 || (sentInvoices.data ?? []).length > 0) {
+    throw new HttpError(409, BILLED_MEMBER_MESSAGE);
   }
   // FKs cascade: this removes only this member's own rows (and their team_members row).
   const { error } = await admin.auth.admin.deleteUser(user.id);
