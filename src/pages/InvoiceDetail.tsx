@@ -63,7 +63,19 @@ const fmt = (iso?: string | null) => {
 const InvoiceDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { invoices, clients, profile, finalizeInvoice, markInvoicePaid, deleteInvoice } = useApp();
+  const {
+    invoices,
+    clients,
+    profile,
+    finalizeInvoice,
+    markInvoicePaid,
+    deleteInvoice,
+    adminView,
+    readOnly,
+    memberBilling,
+  } = useApp();
+  // A member's invoice is billed to their lead; once sent only the lead can act on it.
+  const isMemberInvoice = !!memberBilling;
   const [confirm, setConfirm] = useState<null | 'finalize' | 'delete'>(null);
   const [editOpen, setEditOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -132,10 +144,12 @@ const InvoiceDetail: React.FC = () => {
         onBack={() => navigate('/invoices')}
         subtitle={
           <>
-            {client ? (
+            {client && adminView ? (
               <Link to={`/client/${client.id}`} className="hover:underline">
                 {client.companyName}
               </Link>
+            ) : client ? (
+              `Bill to ${client.companyName}`
             ) : (
               'Unknown client'
             )}
@@ -148,32 +162,34 @@ const InvoiceDetail: React.FC = () => {
             <Download className="h-4 w-4" />
             Download PDF
           </Button>
-          {invoice.status === 'draft' && (
+          {invoice.status === 'draft' && !readOnly && (
             <Button variant="outline" className="gap-2" onClick={() => setEditOpen(true)}>
               <Pencil className="h-4 w-4" />
               Edit
             </Button>
           )}
-          {invoice.status === 'draft' && (
+          {invoice.status === 'draft' && !readOnly && (
             <Button className="gap-2" onClick={() => setConfirm('finalize')}>
               <FileCheck className="h-4 w-4" />
-              Finalize
+              {isMemberInvoice ? 'Finalize & send' : 'Finalize'}
             </Button>
           )}
-          {invoice.status === 'finalized' && (
+          {invoice.status === 'finalized' && adminView && (
             <Button className="gap-2" onClick={doMarkPaid} disabled={busy}>
               <CheckCircle2 className="h-4 w-4" />
               Mark paid
             </Button>
           )}
-          <Button
-            variant="ghost"
-            size="icon"
-            title="Delete"
-            onClick={() => setConfirm('delete')}
-          >
-            <Trash2 className="h-4 w-4 text-destructive" />
-          </Button>
+          {!readOnly && (adminView || invoice.status === 'draft') && (
+            <Button
+              variant="ghost"
+              size="icon"
+              title="Delete"
+              onClick={() => setConfirm('delete')}
+            >
+              <Trash2 className="h-4 w-4 text-destructive" />
+            </Button>
+          )}
         </div>
         }
       />
@@ -292,7 +308,9 @@ const InvoiceDetail: React.FC = () => {
             </DialogTitle>
             <DialogDescription>
               {confirm === 'finalize'
-                ? 'This locks the hours in this period so they cannot be billed on another invoice. It re-checks for any hours already billed elsewhere before finalizing.'
+                ? isMemberInvoice
+                  ? 'This sends the invoice to your team lead and locks its hours. After that you can no longer edit or delete it; your lead marks it paid or returns it to you if something needs fixing.'
+                  : 'This locks the hours in this period so they cannot be billed on another invoice. It re-checks for any hours already billed elsewhere before finalizing.'
                 : `This will permanently delete #${formatInvoiceNumber(invoice.invoiceNumber)}.${
                     invoice.status !== 'draft'
                       ? ' Its hours will be released back to uninvoiced.'

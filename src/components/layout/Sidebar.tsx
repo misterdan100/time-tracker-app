@@ -86,6 +86,7 @@ const Sidebar: React.FC<SidebarProps> = ({ onOpenTimeEntry, open, onClose }) => 
     : [
         { path: '/', label: 'Dashboard', icon: LayoutDashboard },
         { path: '/projects', label: 'Projects', icon: Building2 },
+        { path: '/invoices', label: 'Invoices', icon: FileText },
       ];
 
   const footerButtonClass = (danger = false) =>

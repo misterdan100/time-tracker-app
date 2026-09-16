@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { useApp } from '../context/AppContext';
 import { Button } from '../components/ui/button';
@@ -33,6 +33,8 @@ import PageHeader from '../components/layout/PageHeader';
 import { Callout } from '../components/ui/callout';
 import InvoiceStatusBadge from '../components/invoice/InvoiceStatusBadge';
 import InvoiceDialog from '../components/dialogs/InvoiceDialog';
+import TeamInvoicesPanel from '../components/invoice/TeamInvoicesPanel';
+import { LEAD_CLIENT_ID } from '../lib/teamBilling';
 import { downloadInvoice } from '../lib/downloadInvoice';
 import { formatCurrency, formatInvoiceNumber } from '../lib/invoiceUtils';
 import { isProfileComplete } from '../lib/profileUtils';
@@ -68,9 +70,26 @@ const STATUS_RANK: Record<InvoiceStatus, number> = { draft: 0, finalized: 1, pai
 type BulkAction = 'finalize' | 'paid' | 'download' | 'delete';
 
 const Invoices: React.FC = () => {
-  const { invoices, clients, profile, deleteInvoice, finalizeInvoice, markInvoicePaid } = useApp();
+  const {
+    invoices,
+    clients,
+    profile,
+    deleteInvoice,
+    finalizeInvoice,
+    markInvoicePaid,
+    adminView,
+    readOnly,
+    memberBilling,
+    teamInvoices,
+  } = useApp();
   const navigate = useNavigate();
-  const profileComplete = isProfileComplete(profile);
+  // Admin: "Clients" (invoices you send) or "From team" (invoices your members send you).
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tab = adminView && searchParams.get('tab') === 'team' ? 'team' : 'clients';
+  const setTab = (next: 'clients' | 'team') =>
+    setSearchParams(next === 'team' ? { tab: 'team' } : {}, { replace: true });
+  const teamAwaiting = teamInvoices.filter((i) => i.status === 'finalized').length;
+  const profileComplete = isProfileComplete(profile, adminView ? 'studio' : 'member');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<Invoice | null>(null);
   const [statusFilter, setStatusFilter] = useState<InvoiceStatus | 'All'>('All');
@@ -83,8 +102,10 @@ const Invoices: React.FC = () => {
 
   const openNew = () => {
     if (!profileComplete) {
-      toast.error('Complete your studio profile to create invoices', {
-        description: 'Add your studio and payment details first.',
+      toast.error(`Complete your ${adminView ? 'studio ' : ''}profile to create invoices`, {
+        description: adminView
+          ? 'Add your studio and payment details first.'
+          : 'Add your identity, contact and payment details first.',
       });
       navigate('/profile');
       return;
@@ -231,20 +252,80 @@ const Invoices: React.FC = () => {
 
   const statusOptions: Array<InvoiceStatus | 'All'> = ['All', 'draft', 'finalized', 'paid'];
 
-  return (
-    <div className="space-y-6">
+  // Page title, actions and (for the admin) the Clients / From team tabs.
+  const header = (
+    <>
       <PageHeader
         title="Invoices"
-        subtitle="Bill clients for hours worked"
+        subtitle={
+          adminView
+            ? tab === 'team'
+              ? 'Invoices your team sends you'
+              : 'Bill clients for hours worked'
+            : 'Bill your team lead for hours worked'
+        }
         actions={
-          <Button onClick={openNew} className="w-full gap-2 sm:w-auto">
-            <Plus className="h-4 w-4" />
-            New Invoice
-          </Button>
+          readOnly || tab === 'team' ? undefined : (
+            <Button onClick={openNew} className="w-full gap-2 sm:w-auto">
+              <Plus className="h-4 w-4" />
+              New Invoice
+            </Button>
+          )
         }
       />
 
-      {!profileComplete && (
+      {adminView && (
+        <div role="tablist" aria-label="Invoice type" className="flex flex-wrap gap-2">
+          <Button
+            role="tab"
+            aria-selected={tab === 'clients'}
+            variant={tab === 'clients' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setTab('clients')}
+          >
+            Clients
+          </Button>
+          <Button
+            role="tab"
+            aria-selected={tab === 'team'}
+            variant={tab === 'team' ? 'default' : 'outline'}
+            size="sm"
+            className="gap-2"
+            onClick={() => setTab('team')}
+          >
+            From team
+            {teamAwaiting > 0 && (
+              <span className="rounded-badge bg-status-warning-bg px-1.5 text-xs text-status-warning-fg">
+                {teamAwaiting}
+              </span>
+            )}
+          </Button>
+        </div>
+      )}
+    </>
+  );
+
+  if (tab === 'team') {
+    return (
+      <div className="space-y-6">
+        {header}
+        <TeamInvoicesPanel />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {header}
+
+      {memberBilling && !readOnly && memberBilling.hourlyRate <= 0 && (
+        <Callout tone="warning">
+          Your team lead hasn't set your hourly rate yet. You can prepare drafts, but you can't send
+          invoices until it is set.
+        </Callout>
+      )}
+
+      {!readOnly && !profileComplete && (
         <Callout
           tone="warning"
           action={
@@ -258,7 +339,7 @@ const Invoices: React.FC = () => {
             </Button>
           }
         >
-          Complete your studio profile to start creating invoices.
+          Complete your {adminView ? 'studio ' : ''}profile to start creating invoices.
         </Callout>
       )}
 
@@ -297,27 +378,29 @@ const Invoices: React.FC = () => {
             ))}
           </div>
         </div>
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
-          <label htmlFor="invoice-client-filter" className="text-sm font-medium">
-            Client:
-          </label>
-          <Select value={clientFilter} onValueChange={setClientFilter}>
-            <SelectTrigger id="invoice-client-filter" className="w-full sm:w-56">
-              <SelectValue placeholder="All clients" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ALL_CLIENTS}>All clients</SelectItem>
-              {clients.map((c) => (
-                <SelectItem key={c.id} value={c.id}>
-                  {c.companyName}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+        {adminView && (
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
+            <label htmlFor="invoice-client-filter" className="text-sm font-medium">
+              Client:
+            </label>
+            <Select value={clientFilter} onValueChange={setClientFilter}>
+              <SelectTrigger id="invoice-client-filter" className="w-full sm:w-56">
+                <SelectValue placeholder="All clients" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL_CLIENTS}>All clients</SelectItem>
+                {clients.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    {c.companyName}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
       </div>
 
-      {visibleSelected.length > 0 && (
+      {adminView && visibleSelected.length > 0 && (
         <div
           role="toolbar"
           aria-label="Bulk actions"
@@ -383,24 +466,26 @@ const Invoices: React.FC = () => {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="w-10 pr-0">
-                <input
-                  type="checkbox"
-                  className="h-4 w-4 accent-primary"
-                  aria-label={allVisibleSelected ? 'Deselect all invoices' : 'Select all invoices'}
-                  checked={allVisibleSelected}
-                  ref={(el) => {
-                    if (el) el.indeterminate = someVisibleSelected;
-                  }}
-                  onChange={toggleAllVisible}
-                  disabled={sorted.length === 0 || !!bulkBusy}
-                />
-              </TableHead>
+              {adminView && (
+                <TableHead className="w-10 pr-0">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 accent-primary"
+                    aria-label={allVisibleSelected ? 'Deselect all invoices' : 'Select all invoices'}
+                    checked={allVisibleSelected}
+                    ref={(el) => {
+                      if (el) el.indeterminate = someVisibleSelected;
+                    }}
+                    onChange={toggleAllVisible}
+                    disabled={sorted.length === 0 || !!bulkBusy}
+                  />
+                </TableHead>
+              )}
               <SortableHead sortKey="number" sort={sort} onSort={toggle}>
                 Number
               </SortableHead>
               <SortableHead sortKey="client" sort={sort} onSort={toggle} className="hidden md:table-cell">
-                Client
+                {adminView ? 'Client' : 'Bill to'}
               </SortableHead>
               <SortableHead sortKey="period" sort={sort} onSort={toggle} className="hidden lg:table-cell">
                 Period
@@ -420,7 +505,7 @@ const Invoices: React.FC = () => {
           <TableBody>
             {sorted.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
+                <TableCell colSpan={adminView ? 8 : 7} className="py-8 text-center text-muted-foreground">
                   {invoices.length === 0
                     ? 'No invoices yet. Create your first one.'
                     : 'No invoices match these filters.'}
@@ -429,16 +514,18 @@ const Invoices: React.FC = () => {
             ) : (
               sorted.map((invoice) => (
                 <TableRow key={invoice.id} data-state={selected.has(invoice.id) ? 'selected' : undefined}>
-                  <TableCell className="w-10 pr-0">
-                    <input
-                      type="checkbox"
-                      className="h-4 w-4 accent-primary"
-                      aria-label={`Select invoice #${formatInvoiceNumber(invoice.invoiceNumber)}`}
-                      checked={selected.has(invoice.id)}
-                      onChange={() => toggleOne(invoice.id)}
-                      disabled={!!bulkBusy}
-                    />
-                  </TableCell>
+                  {adminView && (
+                    <TableCell className="w-10 pr-0">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 accent-primary"
+                        aria-label={`Select invoice #${formatInvoiceNumber(invoice.invoiceNumber)}`}
+                        checked={selected.has(invoice.id)}
+                        onChange={() => toggleOne(invoice.id)}
+                        disabled={!!bulkBusy}
+                      />
+                    </TableCell>
+                  )}
                   <TableCell className="font-medium">
                     <Link
                       to={`/invoice/${invoice.id}`}
@@ -448,12 +535,16 @@ const Invoices: React.FC = () => {
                     </Link>
                   </TableCell>
                   <TableCell className="hidden md:table-cell">
-                    <Link
-                      to={`/client/${invoice.clientId}`}
-                      className="link"
-                    >
-                      {getClientName(invoice.clientId)}
-                    </Link>
+                    {invoice.clientId === LEAD_CLIENT_ID ? (
+                      getClientName(invoice.clientId)
+                    ) : (
+                      <Link
+                        to={`/client/${invoice.clientId}`}
+                        className="link"
+                      >
+                        {getClientName(invoice.clientId)}
+                      </Link>
+                    )}
                   </TableCell>
                   <TableCell className="hidden whitespace-nowrap lg:table-cell">
                     {fmt(invoice.periodStart)} – {fmt(invoice.periodEnd)}
@@ -477,7 +568,7 @@ const Invoices: React.FC = () => {
                       >
                         <Eye className="h-4 w-4" />
                       </Button>
-                      {invoice.status === 'draft' && (
+                      {invoice.status === 'draft' && !readOnly && (
                         <Button
                           variant="ghost"
                           size="icon"
@@ -495,14 +586,17 @@ const Invoices: React.FC = () => {
                       >
                         <Download className="h-4 w-4" />
                       </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        title="Delete"
-                        onClick={() => setDeleteTarget(invoice)}
-                      >
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                      </Button>
+                      {/* Members can only delete drafts; a sent invoice is locked for them. */}
+                      {!readOnly && (adminView || invoice.status === 'draft') && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          title="Delete"
+                          onClick={() => setDeleteTarget(invoice)}
+                        >
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      )}
                     </div>
                   </TableCell>
                 </TableRow>
@@ -515,6 +609,7 @@ const Invoices: React.FC = () => {
       <InvoiceDialog
         open={dialogOpen}
         onOpenChange={handleDialogChange}
+        lockedClientId={adminView ? undefined : LEAD_CLIENT_ID}
         editInvoice={editTarget}
         onCreated={(invoice) => navigate(`/invoice/${invoice.id}`)}
       />

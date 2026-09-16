@@ -7,6 +7,7 @@ import {
   Profile,
   Project,
   ProjectAssignment,
+  TeamInvoice,
   TeamMemberSummary,
   TeamTimeEntry,
   TimeEntry,
@@ -19,6 +20,7 @@ import {
   groupByProject,
 } from '../lib/invoiceUtils';
 import { normalizeProfile } from '../lib/profileUtils';
+import { LEAD_CLIENT_ID, leadAsClient, type MemberBilling } from '../lib/teamBilling';
 import { normalizeWorkTypes } from '../lib/workTypes';
 import { useAuth } from './AuthContext';
 
@@ -51,6 +53,16 @@ interface AppContextType {
   teamEntries: TeamTimeEntry[];
   /** Projects the signed-in user can log hours on (members: assigned ones only). */
   loggableProjects: Project[];
+  /** Member data only: who they bill and at what rate (set by the lead). */
+  memberBilling: MemberBilling | null;
+  /** Admin only: invoices members sent them (finalized or paid). */
+  teamInvoices: TeamInvoice[];
+  /** Admin only: members' studio profiles by user id (the "From" block of their PDFs). */
+  teamProfiles: Record<string, Profile>;
+  /** Admin: mark a received invoice as paid. */
+  markTeamInvoicePaid: (id: string) => Promise<boolean>;
+  /** Admin: send a received invoice back to the member as a draft (releases its hours). */
+  returnTeamInvoice: (id: string) => Promise<boolean>;
   /** Set while the admin is viewing a member's account. */
   viewAs: ViewAsTarget | null;
   /** True while viewing another account: every mutation is blocked. */
@@ -175,7 +187,9 @@ const timeEntryToRow = (e: Partial<TimeEntry>): Record<string, unknown> => {
 
 const rowToInvoice = (r: any): Invoice => ({
   id: r.id,
-  clientId: r.client_id,
+  // Invoices billed to a lead have no client; the UI treats the lead as the client.
+  clientId: r.client_id ?? LEAD_CLIENT_ID,
+  billToUserId: r.bill_to_user_id ?? null,
   invoiceNumber: r.invoice_number,
   title: r.title ?? '',
   periodStart: r.period_start,
@@ -192,9 +206,16 @@ const rowToInvoice = (r: any): Invoice => ({
   paidAt: r.paid_at ?? null,
 });
 
-const invoiceToRow = (i: Partial<Invoice>): Record<string, unknown> => {
+const invoiceToRow = (i: Partial<Invoice>, leadId?: string | null): Record<string, unknown> => {
   const row: Record<string, unknown> = {};
-  if (i.clientId !== undefined) row.client_id = i.clientId;
+  if (i.clientId !== undefined) {
+    if (i.clientId === LEAD_CLIENT_ID) {
+      row.client_id = null;
+      row.bill_to_user_id = leadId ?? null;
+    } else {
+      row.client_id = i.clientId;
+    }
+  }
   if (i.invoiceNumber !== undefined) row.invoice_number = i.invoiceNumber;
   if (i.title !== undefined) row.title = i.title;
   if (i.periodStart !== undefined) row.period_start = i.periodStart;
@@ -254,8 +275,9 @@ const rowToTeamEntry = (r: any): TeamTimeEntry => ({
   hours: Number(r.hours),
 });
 
-/** Stand-in for a query we skip, so Promise.all keeps one shape. */
+/** Stand-ins for queries we skip, so Promise.all keeps one shape. */
 const EMPTY = Promise.resolve({ data: [] as any[], error: null });
+const EMPTY_ONE = Promise.resolve({ data: null as any, error: null });
 
 const citiesFromProjects = (projects: Project[]): string[] =>
   Array.from(new Set(projects.map((p) => p.city).filter(Boolean)));
@@ -281,6 +303,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [assignments, setAssignments] = useState<ProjectAssignment[]>([]);
   const [teamMembers, setTeamMembers] = useState<TeamMemberSummary[]>([]);
   const [teamEntries, setTeamEntries] = useState<TeamTimeEntry[]>([]);
+  const [memberBilling, setMemberBilling] = useState<MemberBilling | null>(null);
+  const [teamInvoices, setTeamInvoices] = useState<TeamInvoice[]>([]);
+  const [teamProfiles, setTeamProfiles] = useState<Record<string, Profile>>({});
   const [loading, setLoading] = useState(false);
 
   // Guards against a slow earlier response overwriting a newer one (e.g. switching accounts).
@@ -291,8 +316,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const fetchAll = useCallback(async (ownerId: string, asMember: boolean) => {
     const seq = ++fetchSeq.current;
     setLoading(true);
-    const [clientsRes, ownProjectsRes, entriesRes, invoicesRes, profileRes, myAssignmentsRes, membersRes] =
-      await Promise.all([
+    const [
+      clientsRes,
+      ownProjectsRes,
+      entriesRes,
+      invoicesRes,
+      profileRes,
+      myAssignmentsRes,
+      membersRes,
+      ownerMemberRes,
+    ] = await Promise.all([
         // Members have no clients or projects of their own.
         asMember
           ? EMPTY
@@ -306,7 +339,18 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         asMember ? supabase.from('project_members').select('*').eq('user_id', ownerId) : EMPTY,
         asMember
           ? EMPTY
-          : supabase.from('team_members').select('user_id, display_name, active').eq('lead_id', ownerId),
+          : supabase
+              .from('team_members')
+              .select('user_id, display_name, active, hourly_rate, currency')
+              .eq('lead_id', ownerId),
+        // A member's own row: who their lead is and the rate they bill.
+        asMember
+          ? supabase
+              .from('team_members')
+              .select('lead_id, hourly_rate, currency')
+              .eq('user_id', ownerId)
+              .maybeSingle()
+          : EMPTY_ONE,
       ]);
     if (seq !== fetchSeq.current) return;
 
@@ -317,14 +361,21 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (profileRes.error) console.error('Error loading profile:', profileRes.error.message);
     if (myAssignmentsRes.error) console.error('Error loading assignments:', myAssignmentsRes.error.message);
     if (membersRes.error) console.error('Error loading team:', membersRes.error.message);
+    if (ownerMemberRes.error) console.error('Error loading billing:', ownerMemberRes.error.message);
 
     const loadedEntries = (entriesRes.data ?? []).map(rowToTimeEntry);
     let loadedProjects = (ownProjectsRes.data ?? []).map(rowToProject);
+    let loadedClients: Client[] = (clientsRes.data ?? []).map(rowToClient);
+    let loadedBilling: MemberBilling | null = null;
+    let loadedTeamInvoices: TeamInvoice[] = [];
+    const loadedTeamProfiles: Record<string, Profile> = {};
     let loadedAssignments: ProjectAssignment[] = (myAssignmentsRes.data ?? []).map(rowToAssignment);
     const loadedMembers: TeamMemberSummary[] = (membersRes.data ?? []).map((r: any) => ({
       userId: r.user_id,
       displayName: r.display_name ?? '',
       active: !!r.active,
+      hourlyRate: Number(r.hourly_rate ?? 0),
+      currency: r.currency ?? 'COP',
     }));
     let loadedTeamEntries: TeamTimeEntry[] = [];
 
@@ -333,19 +384,30 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const ids = Array.from(
         new Set([...loadedAssignments.map((a) => a.projectId), ...loadedEntries.map((e) => e.projectId)])
       );
-      if (ids.length > 0) {
-        const res = await supabase
-          .from('projects')
-          .select('*')
-          .in('id', ids)
-          .order('created_at', { ascending: true });
-        if (res.error) console.error('Error loading assigned projects:', res.error.message);
-        loadedProjects = (res.data ?? []).map(rowToProject);
+      const leadId: string | null = ownerMemberRes.data?.lead_id ?? null;
+      const [res, leadProfileRes] = await Promise.all([
+        ids.length > 0
+          ? supabase.from('projects').select('*').in('id', ids).order('created_at', { ascending: true })
+          : EMPTY,
+        leadId ? supabase.from('profiles').select('*').eq('user_id', leadId).maybeSingle() : EMPTY_ONE,
+      ]);
+      if (res.error) console.error('Error loading assigned projects:', res.error.message);
+      if (leadProfileRes.error) console.error('Error loading lead profile:', leadProfileRes.error.message);
+      // Members never see clients: every project belongs to the "lead" they bill.
+      loadedProjects = (res.data ?? []).map((r: any) => ({ ...rowToProject(r), clientId: LEAD_CLIENT_ID }));
+      if (leadId) {
+        loadedBilling = {
+          leadId,
+          hourlyRate: Number(ownerMemberRes.data?.hourly_rate ?? 0),
+          currency: ownerMemberRes.data?.currency ?? 'COP',
+        };
+        const leadProfile = leadProfileRes.data ? rowToProfile(leadProfileRes.data) : null;
+        loadedClients = [leadAsClient(leadProfile, loadedBilling)];
       }
     } else {
       const projectIds = loadedProjects.map((p) => p.id);
       const memberIds = loadedMembers.map((m) => m.userId);
-      const [assignRes, teamEntriesRes] = await Promise.all([
+      const [assignRes, teamEntriesRes, teamInvoicesRes, teamProfilesRes] = await Promise.all([
         projectIds.length > 0
           ? supabase.from('project_members').select('*').in('project_id', projectIds)
           : EMPTY,
@@ -356,7 +418,24 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
               .in('user_id', memberIds)
               .order('date', { ascending: false })
           : EMPTY,
+        // Drafts stay private to the member until they send them.
+        memberIds.length > 0
+          ? supabase
+              .from('invoices')
+              .select('*')
+              .in('user_id', memberIds)
+              .neq('status', 'draft')
+              .order('created_at', { ascending: false })
+          : EMPTY,
+        memberIds.length > 0 ? supabase.from('profiles').select('*').in('user_id', memberIds) : EMPTY,
       ]);
+      if (teamInvoicesRes.error) console.error('Error loading team invoices:', teamInvoicesRes.error.message);
+      if (teamProfilesRes.error) console.error('Error loading team profiles:', teamProfilesRes.error.message);
+      loadedTeamInvoices = (teamInvoicesRes.data ?? []).map((r: any) => ({
+        ...rowToInvoice(r),
+        userId: r.user_id,
+      }));
+      for (const r of teamProfilesRes.data ?? []) loadedTeamProfiles[r.user_id] = rowToProfile(r);
       if (assignRes.error) console.error('Error loading assignments:', assignRes.error.message);
       if (teamEntriesRes.error) console.error('Error loading team hours:', teamEntriesRes.error.message);
       loadedAssignments = (assignRes.data ?? []).map(rowToAssignment);
@@ -364,7 +443,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
     if (seq !== fetchSeq.current) return;
 
-    setClients((clientsRes.data ?? []).map(rowToClient));
+    setClients(loadedClients);
     setProjects(loadedProjects);
     setTimeEntries(loadedEntries);
     setInvoices((invoicesRes.data ?? []).map(rowToInvoice));
@@ -373,6 +452,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setAssignments(loadedAssignments);
     setTeamMembers(loadedMembers);
     setTeamEntries(loadedTeamEntries);
+    setMemberBilling(loadedBilling);
+    setTeamInvoices(loadedTeamInvoices);
+    setTeamProfiles(loadedTeamProfiles);
     setLoading(false);
   }, []);
 
@@ -392,6 +474,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setAssignments([]);
     setTeamMembers([]);
     setTeamEntries([]);
+    setMemberBilling(null);
+    setTeamInvoices([]);
+    setTeamProfiles({});
     // Wait for the role: it decides which shape of data to load.
     if (isAuthenticated && dataOwnerId && !membershipLoading) {
       fetchAll(dataOwnerId, ownerIsMember);
@@ -595,7 +680,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (blockedWhileViewing()) return null;
     const { data, error } = await supabase
       .from('invoices')
-      .insert(invoiceToRow(invoice))
+      .insert(invoiceToRow(invoice, memberBilling?.leadId))
       .select()
       .single();
     if (error) {
@@ -630,14 +715,31 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       });
       return false;
     }
+    // Members always bill the lead's current rate for them, even if it changed after the draft.
+    const hourlyRate = memberBilling ? memberBilling.hourlyRate : invoice.hourlyRate;
+    const currency = memberBilling ? memberBilling.currency : invoice.currency;
+    if (memberBilling && hourlyRate <= 0) {
+      toast.error('Your hourly rate is not set yet', {
+        description: 'Ask your team lead to set it before sending invoices.',
+      });
+      return false;
+    }
     const grouped = groupByProject(entries, projects);
-    const { lineItems, totalHours, totalAmount } = buildLineItems(grouped, invoice.hourlyRate);
+    const { lineItems, totalHours, totalAmount } = buildLineItems(grouped, hourlyRate);
     const issuedAt = new Date().toISOString();
 
     const { data, error } = await supabase
       .from('invoices')
       .update(
-        invoiceToRow({ status: 'finalized', issuedAt, lineItems, totalHours, totalAmount })
+        invoiceToRow({
+          status: 'finalized',
+          issuedAt,
+          lineItems,
+          totalHours,
+          totalAmount,
+          hourlyRate,
+          currency,
+        })
       )
       .eq('id', id)
       .select()
@@ -671,6 +773,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const markInvoicePaid = async (id: string, opts: MutationOpts = {}): Promise<boolean> => {
     if (blockedWhileViewing()) return false;
+    if (memberBilling) {
+      toast.error('Only your team lead can mark an invoice as paid');
+      return false;
+    }
     const paidAt = new Date().toISOString();
     const { data, error } = await supabase
       .from('invoices')
@@ -692,7 +798,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (blockedWhileViewing()) return;
     const { data, error } = await supabase
       .from('invoices')
-      .update(invoiceToRow(updates))
+      .update(invoiceToRow(updates, memberBilling?.leadId))
       .eq('id', id)
       .select()
       .single();
@@ -707,6 +813,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const deleteInvoice = async (id: string, opts: MutationOpts = {}): Promise<boolean> => {
     if (blockedWhileViewing()) return false;
+    if (memberBilling && invoices.find((i) => i.id === id)?.status !== 'draft') {
+      toast.error('Sent invoices can only be returned to draft by your team lead');
+      return false;
+    }
     const { error } = await supabase.from('invoices').delete().eq('id', id);
     if (error) {
       console.error('Error deleting invoice:', error.message);
@@ -820,6 +930,40 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return true;
   };
 
+  // ---------- invoices received from the team (admin) ----------
+
+  const markTeamInvoicePaid = async (id: string): Promise<boolean> => {
+    if (blockedWhileViewing()) return false;
+    const { error } = await supabase.rpc('mark_team_invoice_paid', { p_invoice: id });
+    if (error) {
+      console.error('Error marking team invoice paid:', error.message);
+      toast.error('Could not mark the invoice as paid', { description: error.message });
+      return false;
+    }
+    const paidAt = new Date().toISOString();
+    setTeamInvoices((prev) =>
+      prev.map((i) => (i.id === id ? { ...i, status: 'paid', paidAt } : i))
+    );
+    toast.success('Invoice marked as paid');
+    return true;
+  };
+
+  const returnTeamInvoice = async (id: string): Promise<boolean> => {
+    if (blockedWhileViewing()) return false;
+    const { error } = await supabase.rpc('return_team_invoice', { p_invoice: id });
+    if (error) {
+      console.error('Error returning team invoice:', error.message);
+      toast.error('Could not return the invoice', { description: error.message });
+      return false;
+    }
+    // It is a draft again, which the admin doesn't list.
+    setTeamInvoices((prev) => prev.filter((i) => i.id !== id));
+    toast.success('Invoice returned to draft', {
+      description: 'Its hours are unlocked so the team member can fix and resend it.',
+    });
+    return true;
+  };
+
   // Members log hours only on currently assigned projects; the admin on their own.
   const loggableProjects = ownerIsMember
     ? projects.filter((p) => assignments.some((a) => a.projectId === p.id && a.userId === dataOwnerId))
@@ -905,6 +1049,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         teamMembers,
         teamEntries,
         loggableProjects,
+        memberBilling,
+        teamInvoices,
+        teamProfiles,
+        markTeamInvoicePaid,
+        returnTeamInvoice,
         viewAs: effectiveViewAs,
         readOnly,
         adminView,

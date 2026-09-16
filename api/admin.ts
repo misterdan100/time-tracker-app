@@ -11,6 +11,8 @@
 import { createClient, type SupabaseClient, type User } from '@supabase/supabase-js';
 import {
   DISPLAY_NAME_MAX_LENGTH,
+  HOURLY_RATE_MAX,
+  INVOICE_CURRENCIES,
   PASSWORD_MAX_LENGTH,
   PASSWORD_MIN_LENGTH,
   type AdminRequest,
@@ -40,14 +42,25 @@ interface MemberRow {
   active: boolean;
   lead_id: string | null;
   display_name: string;
+  hourly_rate: number | string | null;
+  currency: string | null;
 }
+
+const MEMBER_COLUMNS = 'user_id, role, active, lead_id, display_name, hourly_rate, currency';
 
 const json = (body: unknown, status = 200) =>
   Response.json(body, { status, headers: { 'Cache-Control': 'no-store' } });
 
 const toMembership = (row: MemberRow | null | undefined): Membership | null =>
   row
-    ? { role: row.role, active: row.active, leadId: row.lead_id, displayName: row.display_name }
+    ? {
+        role: row.role,
+        active: row.active,
+        leadId: row.lead_id,
+        displayName: row.display_name,
+        hourlyRate: Number(row.hourly_rate ?? 0),
+        currency: row.currency ?? 'COP',
+      }
     : null;
 
 const toAdminUser = (user: User, row: MemberRow | null | undefined, callerId: string): AdminUser => ({
@@ -139,7 +152,7 @@ async function loadMember(
 
   const { data: rowData, error: rowError } = await admin
     .from('team_members')
-    .select('user_id, role, active, lead_id, display_name')
+    .select(MEMBER_COLUMNS)
     .eq('user_id', id)
     .maybeSingle();
   if (rowError) throw new HttpError(500, 'Could not load the account.');
@@ -161,7 +174,7 @@ async function listUsers(admin: SupabaseClient, caller: User) {
       admin.auth.admin.listUsers({ page: 1, perPage: 1000 }),
       admin
         .from('team_members')
-        .select('user_id, role, active, lead_id, display_name')
+        .select(MEMBER_COLUMNS)
         .or(`user_id.eq.${caller.id},lead_id.eq.${caller.id}`),
     ]);
   if (authError) throw new HttpError(500, 'Could not list accounts.');
@@ -197,8 +210,12 @@ async function createMember(admin: SupabaseClient, caller: User, body: Record<st
     active: true,
     lead_id: caller.id,
     display_name: displayName,
+    hourly_rate: 0,
+    currency: 'COP',
   };
-  const { error: insertError } = await admin.from('team_members').insert(row);
+  // Rate columns take their database defaults.
+  const { hourly_rate: _rate, currency: _currency, ...insertRow } = row;
+  const { error: insertError } = await admin.from('team_members').insert(insertRow);
   if (insertError) {
     // Don't leave an auth user without a team row behind.
     await admin.auth.admin.deleteUser(data.user.id);
@@ -249,6 +266,24 @@ async function setMemberActive(
   return json({ user: toAdminUser(user, { ...row, active }, caller.id) });
 }
 
+async function setMemberRate(admin: SupabaseClient, caller: User, body: Record<string, unknown>) {
+  const { user, row } = await loadMember(admin, caller.id, body.userId);
+  const hourlyRate = body.hourlyRate;
+  if (typeof hourlyRate !== 'number' || !Number.isFinite(hourlyRate) || hourlyRate < 0 || hourlyRate > HOURLY_RATE_MAX) {
+    throw new HttpError(400, 'Enter a valid hourly rate.');
+  }
+  const currency = requireString(body.currency, 'currency');
+  if (!(INVOICE_CURRENCIES as readonly string[]).includes(currency)) {
+    throw new HttpError(400, 'Unsupported currency.');
+  }
+  const { error } = await admin
+    .from('team_members')
+    .update({ hourly_rate: hourlyRate, currency })
+    .eq('user_id', user.id);
+  if (error) throw new HttpError(500, 'Could not save the rate.');
+  return json({ user: toAdminUser(user, { ...row, hourly_rate: hourlyRate, currency }, caller.id) });
+}
+
 async function deleteMember(admin: SupabaseClient, caller: User, body: Record<string, unknown>) {
   const { user } = await loadMember(admin, caller.id, body.userId);
   const confirmEmail = requireString(body.confirmEmail, 'confirmEmail').trim().toLowerCase();
@@ -286,6 +321,8 @@ export async function POST(request: Request): Promise<Response> {
         return await renameMember(admin, caller, body);
       case 'setPassword':
         return await setMemberPassword(admin, caller, body);
+      case 'setRate':
+        return await setMemberRate(admin, caller, body);
       case 'setActive':
         return await setMemberActive(admin, caller, body);
       case 'delete':

@@ -52,6 +52,8 @@ export const adminApi = {
     call<AdminUserResponse>({ action: 'rename', userId, displayName }),
   setPassword: (userId: string, password: string) =>
     call<AdminOkResponse>({ action: 'setPassword', userId, password }),
+  setRate: (userId: string, hourlyRate: number, currency: string) =>
+    call<AdminUserResponse>({ action: 'setRate', userId, hourlyRate, currency }),
   setActive: (userId: string, active: boolean) =>
     call<AdminUserResponse>({ action: 'setActive', userId, active }),
   remove: (userId: string, confirmEmail: string) =>

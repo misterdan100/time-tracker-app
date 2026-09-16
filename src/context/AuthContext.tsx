@@ -83,7 +83,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setMembershipFor(null);
     supabase
       .from('team_members')
-      .select('role, active, lead_id, display_name')
+      .select('role, active, lead_id, display_name, hourly_rate, currency')
       .eq('user_id', uid)
       .maybeSingle()
       .then(({ data, error }) => {
@@ -101,6 +101,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                   active: data.active,
                   leadId: data.lead_id ?? null,
                   displayName: data.display_name ?? '',
+                  hourlyRate: Number(data.hourly_rate ?? 0),
+                  currency: data.currency ?? 'COP',
                 }
               : null
           );

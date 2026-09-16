@@ -59,6 +59,8 @@ export interface Invoice {
   createdAt?: string | null; // ISO, read-only (set by the database on insert)
   issuedAt?: string | null; // ISO, set on finalize
   paidAt?: string | null; // ISO, set when marked paid
+  /** Set on invoices a team member sends to their lead (then clientId is the lead placeholder). */
+  billToUserId?: string | null;
 }
 
 export type IdType = 'C.C.' | 'NIT' | 'ID';
@@ -90,6 +92,13 @@ export interface TeamMemberSummary {
   userId: string;
   displayName: string;
   active: boolean;
+  hourlyRate: number;
+  currency: string;
+}
+
+/** An invoice a team member sent to the signed-in admin. */
+export interface TeamInvoice extends Invoice {
+  userId: string;
 }
 
 /** A time entry logged by a team member, as seen by their lead (read-only). */

@@ -3,6 +3,12 @@ import { format, parseISO } from 'date-fns';
 import { Client, Invoice, Profile } from '../../types';
 import { formatCurrency, formatInvoiceNumber } from '../../lib/invoiceUtils';
 
+// Team invoices (a member billing their lead) get a solid color band and side stripe so they
+// are recognizable at a glance, even as a small file preview. Dark enough to print legibly.
+const TEAM_ACCENT = '#1e3a5f';
+const TEAM_ACCENT_SOFT = '#eff6ff';
+const TEAM_ACCENT_LINE = '#bfdbfe';
+
 // NOTE: react-pdf uses its own StyleSheet (not Tailwind). Keep the structure
 // simple here — this is the "predetermined design" placeholder to refine later.
 const styles = StyleSheet.create({
@@ -104,6 +110,59 @@ const styles = StyleSheet.create({
   },
   footerDate: { fontSize: 8, color: '#4b5563', marginBottom: 3 },
   footerText: { fontSize: 8, color: '#6b7280', textAlign: 'center' },
+
+  // ----- team invoice variant -----
+  teamStripe: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: 0,
+    width: 10,
+    backgroundColor: TEAM_ACCENT,
+  },
+  // Bleeds to the page edges (cancels the page padding).
+  teamBand: {
+    marginTop: -48,
+    marginHorizontal: -44,
+    paddingHorizontal: 44,
+    paddingTop: 30,
+    paddingBottom: 24,
+    marginBottom: 26,
+    backgroundColor: TEAM_ACCENT,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
+  },
+  teamKicker: {
+    fontSize: 10,
+    lineHeight: 1.3,
+    fontFamily: 'Helvetica-Bold',
+    color: TEAM_ACCENT_LINE,
+    letterSpacing: 2,
+    marginBottom: 6,
+  },
+  // Explicit line heights: the page's inherited one is sized for 10pt text and would overlap.
+  teamName: { fontSize: 26, lineHeight: 1.2, fontFamily: 'Helvetica-Bold', color: '#ffffff' },
+  teamTo: { fontSize: 11, lineHeight: 1.3, color: TEAM_ACCENT_LINE, marginTop: 4 },
+  teamNumber: {
+    fontSize: 30,
+    lineHeight: 1.2,
+    fontFamily: 'Helvetica-Bold',
+    color: '#ffffff',
+    textAlign: 'right',
+  },
+  teamStatus: {
+    marginTop: 6,
+    alignSelf: 'flex-end',
+    fontSize: 8,
+    fontFamily: 'Helvetica-Bold',
+    color: TEAM_ACCENT,
+    backgroundColor: '#ffffff',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 4,
+    textTransform: 'uppercase',
+  },
 });
 
 /**
@@ -125,12 +184,23 @@ function safeFilePart(value: string, fallback: string): string {
   return cleaned || fallback;
 }
 
-/** `[number]-[client]-[professional name]-[yyyy-MM-dd].pdf`, e.g. 011-EZpermitsTX-Daniel Caceres-2026-09-01.pdf */
+/**
+ * `[number]-[client]-[professional name]-[yyyy-MM-dd].pdf`, e.g. 011-EZpermitsTX-Daniel Caceres-2026-09-01.pdf
+ * Team invoices: `TEAM-[number]-[member name]-[yyyy-MM-dd].pdf` (the recipient is always the lead).
+ */
 export function invoiceFileName(
   invoice: Invoice,
   client?: Client | null,
   profile?: Profile | null
 ): string {
+  if (invoice.billToUserId) {
+    return `${[
+      'TEAM',
+      formatInvoiceNumber(invoice.invoiceNumber),
+      safeFilePart(profile?.professionalName ?? '', 'member'),
+      format(invoiceDate(invoice), 'yyyy-MM-dd'),
+    ].join('-')}.pdf`;
+  }
   const parts = [
     formatInvoiceNumber(invoice.invoiceNumber),
     safeFilePart(client?.companyName ?? '', 'client'),
@@ -177,28 +247,49 @@ export const InvoicePdf = ({ invoice, client, profile }: InvoicePdfProps) => {
   };
   const cityCountry = [p.city, p.country].filter(Boolean).join(', ');
   const idLine = [p.idType, p.idNumber].filter(Boolean).join(' ');
+  // A team member billing their lead: issued under their own name, with the team design.
+  const team = !!invoice.billToUserId;
+  const issuerName = team ? p.professionalName : p.studioName;
+  const accent = team ? { color: TEAM_ACCENT } : null;
+  const accentBorder = team ? { borderBottomColor: TEAM_ACCENT, borderTopColor: TEAM_ACCENT } : null;
 
   return (
-    <Document title={numLabel}>
+    <Document title={team ? `TEAM ${numLabel}` : numLabel}>
       <Page size="A4" style={styles.page}>
+        {team ? <View style={styles.teamStripe} fixed /> : null}
+
         {/* Header */}
-        <View style={styles.headerRow}>
-          <View>
-            <Text style={styles.brandName}>{p.studioName || 'Invoice'}</Text>
-            {p.tagline ? <Text style={styles.tagline}>{p.tagline}</Text> : null}
+        {team ? (
+          <View style={styles.teamBand}>
+            <View>
+              <Text style={styles.teamKicker}>TEAM INVOICE</Text>
+              <Text style={styles.teamName}>{p.professionalName || 'Team member'}</Text>
+              <Text style={styles.teamTo}>to {client?.companyName ?? 'Team lead'}</Text>
+            </View>
+            <View>
+              <Text style={styles.teamNumber}>#{numLabel}</Text>
+              <Text style={styles.teamStatus}>{invoice.status}</Text>
+            </View>
           </View>
-          <View>
-            <Text style={styles.invoiceTitle}>INVOICE</Text>
-            <Text style={styles.invoiceNumber}>Number #{numLabel}</Text>
-            <Text style={styles.statusBadge}>{invoice.status}</Text>
+        ) : (
+          <View style={styles.headerRow}>
+            <View>
+              <Text style={styles.brandName}>{p.studioName || 'Invoice'}</Text>
+              {p.tagline ? <Text style={styles.tagline}>{p.tagline}</Text> : null}
+            </View>
+            <View>
+              <Text style={styles.invoiceTitle}>INVOICE</Text>
+              <Text style={styles.invoiceNumber}>Number #{numLabel}</Text>
+              <Text style={styles.statusBadge}>{invoice.status}</Text>
+            </View>
           </View>
-        </View>
+        )}
 
         {/* From / Bill to */}
         <View style={styles.partiesRow}>
           <View style={styles.party}>
             <Text style={styles.label}>From</Text>
-            {p.studioName ? <Text style={styles.strong}>{p.studioName}</Text> : null}
+            {issuerName ? <Text style={styles.strong}>{issuerName}</Text> : null}
             {cityCountry ? <Text>{cityCountry}</Text> : null}
             {p.phone ? <Text>{p.phone}</Text> : null}
             {p.email ? <Text>{p.email}</Text> : null}
@@ -213,7 +304,7 @@ export const InvoicePdf = ({ invoice, client, profile }: InvoicePdfProps) => {
         </View>
 
         {/* Report heading (always shown, uppercase) */}
-        <Text style={styles.reportHeading}>HOURS REPORT #{numLabel}</Text>
+        <Text style={[styles.reportHeading, accent ?? {}]}>HOURS REPORT #{numLabel}</Text>
 
         {/* Period */}
         <View style={{ marginBottom: 18 }}>
@@ -225,7 +316,7 @@ export const InvoicePdf = ({ invoice, client, profile }: InvoicePdfProps) => {
 
         {/* Line items */}
         <View style={styles.table}>
-          <View style={styles.tableHead}>
+          <View style={[styles.tableHead, accentBorder ?? {}]}>
             <Text style={[styles.thProject, styles.headText]}>Project</Text>
             <Text style={[styles.thNum, styles.headText]}>Hours</Text>
             <Text style={[styles.thNum, styles.headText]}>Amount</Text>
@@ -246,9 +337,9 @@ export const InvoicePdf = ({ invoice, client, profile }: InvoicePdfProps) => {
               <Text>Total hours</Text>
               <Text>{invoice.totalHours.toFixed(2)} h</Text>
             </View>
-            <View style={styles.grandRow}>
-              <Text style={styles.grandText}>Total</Text>
-              <Text style={styles.grandText}>
+            <View style={[styles.grandRow, accentBorder ?? {}]}>
+              <Text style={[styles.grandText, accent ?? {}]}>Total</Text>
+              <Text style={[styles.grandText, accent ?? {}]}>
                 {formatCurrency(invoice.totalAmount, currency)}
               </Text>
             </View>
@@ -257,7 +348,12 @@ export const InvoicePdf = ({ invoice, client, profile }: InvoicePdfProps) => {
 
         {/* Payment details */}
         {p.bankName || p.bankAccount || idLine ? (
-          <View style={styles.paymentBox}>
+          <View
+            style={[
+              styles.paymentBox,
+              team ? { borderColor: TEAM_ACCENT_LINE, backgroundColor: TEAM_ACCENT_SOFT } : {},
+            ]}
+          >
             <Text style={[styles.label, { marginBottom: 6 }]}>Payment details</Text>
             {p.bankName ? (
               <View style={styles.paymentRow}>
@@ -291,7 +387,9 @@ export const InvoicePdf = ({ invoice, client, profile }: InvoicePdfProps) => {
         <View style={styles.footer} fixed>
           <Text style={styles.footerDate}>Invoice date: {format(invoiceDate(invoice), 'MMM d, yyyy')}</Text>
           <Text style={styles.footerText}>
-            {p.studioName ? `${p.studioName} · ` : ''}Thank you for your business.
+            {team
+              ? `Team invoice · ${p.professionalName || 'Team member'} to ${client?.companyName ?? 'Team lead'}`
+              : `${p.studioName ? `${p.studioName} · ` : ''}Thank you for your business.`}
           </Text>
         </View>
       </Page>

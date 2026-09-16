@@ -85,6 +85,13 @@ How it fits together:
   member's hours, read-only. The admin sees each member's hours per project on the Team card
   (informational — not part of the admin's own totals or invoices). To undo the SQL, run
   `supabase-rollback-assignments.sql`.
+- **Member invoices:** members bill their lead instead of a client (`invoices.bill_to_user_id`,
+  `client_id` null). In the member's account the lead appears as their only "client" (built from the
+  lead's studio profile), so numbering, periods and PDFs work the same. The admin sets each member's
+  rate in Team → Set rate (`team_members.hourly_rate/currency`); members can't change it. Once a
+  member finalizes an invoice it and its hours are locked for them; the admin sees it under
+  Invoices → From team and marks it paid or returns it to draft (`mark_team_invoice_paid`,
+  `return_team_invoice` RPCs). To undo the SQL, run `supabase-rollback-member-invoices.sql`.
 
 One-time setup:
 

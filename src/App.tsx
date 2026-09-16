@@ -88,14 +88,14 @@ function AppContent() {
               <Route path="/projects" element={<Projects />} />
               <Route path="/project/:id" element={<ProjectDetail />} />
               <Route path="/profile" element={<Profile />} />
-              {/* Members only see their assigned work; clients, invoices and the team are admin-only.
+              <Route path="/invoices" element={<Invoices />} />
+              <Route path="/invoice/:id" element={<InvoiceDetail />} />
+              {/* Members see their assigned work and bill their lead; clients and the team are admin-only.
                   While viewing a member, the admin gets that member's routes too. */}
               {adminView && (
                 <>
                   <Route path="/clients" element={<Clients />} />
                   <Route path="/client/:id" element={<ClientDetail />} />
-                  <Route path="/invoices" element={<Invoices />} />
-                  <Route path="/invoice/:id" element={<InvoiceDetail />} />
                   <Route path="/admin" element={<AdminTeam />} />
                 </>
               )}

@@ -53,7 +53,9 @@ function TextField({
 }
 
 const Profile: React.FC = () => {
-  const { profile, saveProfile, readOnly, viewAs } = useApp();
+  const { profile, saveProfile, readOnly, viewAs, adminView } = useApp();
+  // Team members invoice under their own name: no studio name or slogan.
+  const kind = adminView ? 'studio' : 'member';
   const { userEmail, membership } = useAuth();
   // Name given in the Team panel, used until the person saves their own professional name.
   const teamName = (readOnly ? viewAs?.name : membership?.displayName) || '';
@@ -80,15 +82,19 @@ const Profile: React.FC = () => {
     setSaving(false);
   };
 
-  const complete = isProfileComplete(profile);
-  const missing = missingProfileFields(profile);
+  const complete = isProfileComplete(profile, kind);
+  const missing = missingProfileFields(profile, kind);
 
   return (
     <div className="space-y-6">
       <form onSubmit={handleSave} className="space-y-6">
         <PageHeader
           title="Profile"
-          subtitle="Your studio details used on every invoice"
+          subtitle={
+            kind === 'studio'
+              ? 'Your studio details used on every invoice'
+              : 'Your details used on the invoices you send your team lead'
+          }
           leading={<UserCircle className="h-7 w-7 shrink-0 text-muted-foreground" />}
           actions={
             readOnly ? undefined : (
@@ -112,28 +118,30 @@ const Profile: React.FC = () => {
         )}
 
         <fieldset disabled={readOnly} className="space-y-6">
-          {/* Studio */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Studio</CardTitle>
-            </CardHeader>
-            <CardContent className="grid gap-4 sm:grid-cols-2">
-              <TextField
-                id="studioName"
-                label="Studio / profile name"
-                value={form.studioName}
-                onChange={(v) => update({ studioName: stripAccents(v) })}
-                placeholder="Eg: Daniel Arq"
-              />
-              <TextField
-                id="tagline"
-                label="Slogan"
-                value={form.tagline}
-                onChange={(v) => update({ tagline: stripAccents(v) })}
-                placeholder="Eg: Architecture & Design"
-              />
-            </CardContent>
-          </Card>
+          {/* Studio (admin only) */}
+          {kind === 'studio' && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Studio</CardTitle>
+              </CardHeader>
+              <CardContent className="grid gap-4 sm:grid-cols-2">
+                <TextField
+                  id="studioName"
+                  label="Studio / profile name"
+                  value={form.studioName}
+                  onChange={(v) => update({ studioName: stripAccents(v) })}
+                  placeholder="Eg: Daniel Arq"
+                />
+                <TextField
+                  id="tagline"
+                  label="Slogan"
+                  value={form.tagline}
+                  onChange={(v) => update({ tagline: stripAccents(v) })}
+                  placeholder="Eg: Architecture & Design"
+                />
+              </CardContent>
+            </Card>
+          )}
 
           {/* Professional & identity */}
           <Card>

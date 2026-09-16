@@ -23,6 +23,7 @@ import { CalendarIcon } from 'lucide-react';
 import { endOfMonth, format, startOfMonth, subMonths } from 'date-fns';
 import { enUS } from 'date-fns/locale';
 import { useApp } from '../../context/AppContext';
+import { LEAD_CLIENT_ID } from '../../lib/teamBilling';
 import { Invoice } from '../../types';
 import {
   buildLineItems,
@@ -56,7 +57,8 @@ const InvoiceDialog: React.FC<InvoiceDialogProps> = ({
   editInvoice,
   onCreated,
 }) => {
-  const { clients, projects, timeEntries, invoices, addInvoice, updateInvoice } = useApp();
+  const { clients, projects, timeEntries, invoices, addInvoice, updateInvoice, memberBilling } =
+    useApp();
   // Read latest invoices inside the open-effect without making it a dependency.
   const invoicesRef = useRef(invoices);
   invoicesRef.current = invoices;
@@ -131,6 +133,14 @@ const InvoiceDialog: React.FC<InvoiceDialogProps> = ({
       setCurrency(c.currency || defaultCurrencyForCountry(c.country));
     }
   }, [clientId, clients, isEditing]);
+
+  // A member billing their lead always uses the rate the lead set (drafts included).
+  const billingLead = clientId === LEAD_CLIENT_ID;
+  useEffect(() => {
+    if (!open || !billingLead || !memberBilling) return;
+    setHourlyRate(memberBilling.hourlyRate ? String(memberBilling.hourlyRate) : '');
+    setCurrency(memberBilling.currency);
+  }, [open, billingLead, memberBilling, editInvoice]);
 
   // Projects (of the client) that have unbilled hours in the chosen range.
   const breakdown = useMemo(
@@ -270,7 +280,9 @@ const InvoiceDialog: React.FC<InvoiceDialogProps> = ({
           <DialogDescription>
             {isEditing
               ? 'Update this draft. Saving recalculates its hours and total from the current range and selection.'
-              : 'Bill a client for hours worked on selected projects over a date range. Saved as a draft — finalize it later to lock those hours.'}
+              : billingLead
+                ? 'Bill your team lead for hours worked on your projects over a date range. Saved as a draft — finalize it to send it.'
+                : 'Bill a client for hours worked on selected projects over a date range. Saved as a draft — finalize it later to lock those hours.'}
           </DialogDescription>
         </DialogHeader>
 
@@ -279,7 +291,7 @@ const InvoiceDialog: React.FC<InvoiceDialogProps> = ({
             {/* Client + number */}
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="grid gap-2">
-                <Label htmlFor="client">Client</Label>
+                <Label htmlFor="client">{billingLead ? 'Bill to' : 'Client'}</Label>
                 <Select value={clientId} onValueChange={handleClientChange} disabled={clientLocked}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select client" />
@@ -334,7 +346,8 @@ const InvoiceDialog: React.FC<InvoiceDialogProps> = ({
               </p>
             ) : clientId ? (
               <p className="-mt-2 text-xs text-muted-foreground">
-                Per-client numbering. Suggested next: #{formatInvoiceNumber(maxExisting + 1)}.
+                {billingLead ? 'Your own numbering.' : 'Per-client numbering.'} Suggested next: #
+                {formatInvoiceNumber(maxExisting + 1)}.
               </p>
             ) : null}
 
@@ -409,7 +422,9 @@ const InvoiceDialog: React.FC<InvoiceDialogProps> = ({
                 </p>
               ) : breakdown.length === 0 ? (
                 <p className="rounded-xl border border-border/60 px-3 py-4 text-sm text-muted-foreground">
-                  No unbilled hours for this client in this range.
+                  {billingLead
+                    ? 'No unbilled hours in this range.'
+                    : 'No unbilled hours for this client in this range.'}
                 </p>
               ) : (
                 <div className="max-h-44 space-y-1 overflow-y-auto rounded-xl border border-border/60 p-2">
@@ -445,12 +460,13 @@ const InvoiceDialog: React.FC<InvoiceDialogProps> = ({
                   min="0"
                   value={hourlyRate}
                   onChange={(e) => setHourlyRate(e.target.value)}
-                  placeholder="Eg: 50"
+                  placeholder={billingLead ? 'Not set yet' : 'Eg: 50'}
+                  disabled={billingLead}
                 />
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="currency">Currency</Label>
-                <Select value={currency} onValueChange={setCurrency}>
+                <Select value={currency} onValueChange={setCurrency} disabled={billingLead}>
                   <SelectTrigger>
                     <SelectValue placeholder="Currency" />
                   </SelectTrigger>
@@ -464,6 +480,13 @@ const InvoiceDialog: React.FC<InvoiceDialogProps> = ({
                 </Select>
               </div>
             </div>
+            {billingLead ? (
+              <p className="-mt-2 text-xs text-muted-foreground">
+                {rate > 0
+                  ? 'Rate and currency are set by your team lead.'
+                  : 'Your team lead has not set your rate yet. You can save a draft, but you can only send it once the rate is set.'}
+              </p>
+            ) : null}
 
             {/* Title + notes */}
             <div className="grid gap-2">

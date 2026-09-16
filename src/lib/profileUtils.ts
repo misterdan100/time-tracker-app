@@ -33,16 +33,29 @@ export const REQUIRED_PROFILE_FIELDS: Array<{ key: keyof Profile; label: string 
   { key: 'bankAccount', label: 'Bank account' },
 ];
 
-/** Labels of the required fields still empty (all of them if the profile is null). */
-export function missingProfileFields(profile: Profile | null): string[] {
-  if (!profile) return REQUIRED_PROFILE_FIELDS.map((f) => f.label);
-  return REQUIRED_PROFILE_FIELDS.filter((f) => !String(profile[f.key] ?? '').trim()).map(
-    (f) => f.label
-  );
+/**
+ * Whose invoices the profile is for: a studio billing clients (the admin), or a team member
+ * billing their lead, who invoices under their professional name and needs no studio/slogan.
+ */
+export type ProfileKind = 'studio' | 'member';
+
+const STUDIO_ONLY_FIELDS: Array<keyof Profile> = ['studioName', 'tagline'];
+
+export function requiredProfileFields(kind: ProfileKind = 'studio') {
+  return kind === 'member'
+    ? REQUIRED_PROFILE_FIELDS.filter((f) => !STUDIO_ONLY_FIELDS.includes(f.key))
+    : REQUIRED_PROFILE_FIELDS;
 }
 
-export function isProfileComplete(profile: Profile | null): boolean {
-  return missingProfileFields(profile).length === 0;
+/** Labels of the required fields still empty (all of them if the profile is null). */
+export function missingProfileFields(profile: Profile | null, kind: ProfileKind = 'studio'): string[] {
+  const fields = requiredProfileFields(kind);
+  if (!profile) return fields.map((f) => f.label);
+  return fields.filter((f) => !String(profile[f.key] ?? '').trim()).map((f) => f.label);
+}
+
+export function isProfileComplete(profile: Profile | null, kind: ProfileKind = 'studio'): boolean {
+  return missingProfileFields(profile, kind).length === 0;
 }
 
 /**

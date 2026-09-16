@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import { endOfMonth, format, isWithinInterval, parseISO, startOfMonth } from 'date-fns';
 import {
   Ban,
+  Banknote,
   Building2,
   Eye,
   KeyRound,
@@ -40,15 +41,17 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { SortableHead } from '../components/ui/sortable-head';
 import MemberDialog from '../components/dialogs/MemberDialog';
 import SetPasswordDialog from '../components/dialogs/SetPasswordDialog';
+import MemberRateDialog from '../components/dialogs/MemberRateDialog';
 import MemberProjectsDialog, {
   type MemberProjectsTarget,
 } from '../components/dialogs/MemberProjectsDialog';
 import { useApp } from '../context/AppContext';
 import { adminApi, errorMessage } from '../lib/adminApi';
 import { dateSortValue, SortAccessors, useSort } from '../lib/sort';
+import { formatCurrency } from '../lib/invoiceUtils';
 import { DISPLAY_NAME_MAX_LENGTH, type AdminUser } from '../../api/_contract';
 
-type TeamSortKey = 'name' | 'status' | 'lastSignIn' | 'projects' | 'hours';
+type TeamSortKey = 'name' | 'status' | 'lastSignIn' | 'projects' | 'rate' | 'hours';
 
 const displayName = (u: AdminUser) => u.membership?.displayName || u.email;
 
@@ -69,6 +72,7 @@ const AdminTeam: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [projectsTarget, setProjectsTarget] = useState<MemberProjectsTarget | null>(null);
+  const [rateTarget, setRateTarget] = useState<AdminUser | null>(null);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [passwordTarget, setPasswordTarget] = useState<AdminUser | null>(null);
@@ -127,6 +131,7 @@ const AdminTeam: React.FC = () => {
       status: (u) => (u.isSelf ? 0 : u.membership?.active ? 1 : 2),
       lastSignIn: (u) => dateSortValue(u.lastSignInAt),
       projects: (u) => (u.isSelf ? -1 : projectCountByUser[u.id] ?? 0),
+      rate: (u) => (u.isSelf ? -1 : u.membership?.hourlyRate ?? 0),
       hours: (u) => hoursByUser[u.id] ?? 0,
     }),
     [hoursByUser, projectCountByUser]
@@ -267,6 +272,14 @@ const AdminTeam: React.FC = () => {
                 Projects
               </SortableHead>
               <SortableHead
+                sortKey="rate"
+                sort={sort}
+                onSort={toggle}
+                className="hidden lg:table-cell"
+              >
+                Rate
+              </SortableHead>
+              <SortableHead
                 sortKey="hours"
                 sort={sort}
                 onSort={toggle}
@@ -280,7 +293,7 @@ const AdminTeam: React.FC = () => {
           <TableBody>
             {loading ? (
               <TableRow>
-                <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
+                <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
                   Loading team…
                 </TableCell>
               </TableRow>
@@ -308,6 +321,15 @@ const AdminTeam: React.FC = () => {
                     <TableCell className="hidden lg:table-cell">
                       {u.isSelf ? '—' : projectCountByUser[u.id] ?? 0}
                     </TableCell>
+                    <TableCell className="hidden whitespace-nowrap lg:table-cell">
+                      {u.isSelf ? (
+                        '—'
+                      ) : u.membership?.hourlyRate ? (
+                        `${formatCurrency(u.membership.hourlyRate, u.membership.currency)}/h`
+                      ) : (
+                        <Badge tone="warning">Not set</Badge>
+                      )}
+                    </TableCell>
                     <TableCell className="hidden sm:table-cell">
                       {u.isSelf ? '—' : `${(hoursByUser[u.id] ?? 0).toFixed(2)}h`}
                     </TableCell>
@@ -333,6 +355,10 @@ const AdminTeam: React.FC = () => {
                             >
                               <Building2 className="h-4 w-4" />
                               Projects
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onSelect={() => setRateTarget(u)}>
+                              <Banknote className="h-4 w-4" />
+                              Set rate
                             </DropdownMenuItem>
                             <DropdownMenuItem onSelect={() => openRename(u)}>
                               <Pencil className="h-4 w-4" />
@@ -387,6 +413,15 @@ const AdminTeam: React.FC = () => {
       <MemberProjectsDialog member={projectsTarget} onClose={() => setProjectsTarget(null)} />
 
       <SetPasswordDialog target={passwordTarget} onClose={() => setPasswordTarget(null)} />
+
+      <MemberRateDialog
+        target={rateTarget}
+        onClose={() => setRateTarget(null)}
+        onSaved={(user) => {
+          replaceUser(user);
+          afterTeamChange();
+        }}
+      />
 
       {/* Rename */}
       <Dialog open={!!renameTarget} onOpenChange={(open) => !open && !busy && setRenameTarget(null)}>

@@ -85,9 +85,7 @@ create policy "time_entries_select_own" on public.time_entries
   for select using (auth.uid() = user_id);
 -- time_entries_insert_own / _update_own are defined in the PROJECT ASSIGNMENT section
 -- (hours only on projects you own or are assigned to).
-drop policy if exists "time_entries_delete_own" on public.time_entries;
-create policy "time_entries_delete_own" on public.time_entries
-  for delete using (auth.uid() = user_id);
+-- time_entries_delete_own is defined in the MEMBER INVOICES section (members can't delete billed hours).
 
 -- ============================================================
 -- INVOICES (added later — safe to re-run)
@@ -149,15 +147,7 @@ alter table public.invoices enable row level security;
 drop policy if exists "invoices_select_own" on public.invoices;
 create policy "invoices_select_own" on public.invoices
   for select using (auth.uid() = user_id);
-drop policy if exists "invoices_insert_own" on public.invoices;
-create policy "invoices_insert_own" on public.invoices
-  for insert with check (auth.uid() = user_id);
-drop policy if exists "invoices_update_own" on public.invoices;
-create policy "invoices_update_own" on public.invoices
-  for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
-drop policy if exists "invoices_delete_own" on public.invoices;
-create policy "invoices_delete_own" on public.invoices
-  for delete using (auth.uid() = user_id);
+-- invoices_insert_own / _update_own / _delete_own are defined in the MEMBER INVOICES section.
 
 -- ============================================================
 -- PROFILES (issuer/studio details per user — added later)
@@ -397,9 +387,164 @@ create policy "time_entries_insert_own" on public.time_entries
     auth.uid() = user_id and (public.owns_project(project_id) or public.is_assigned(project_id))
   );
 
+-- time_entries_update_own is redefined in the MEMBER INVOICES section.
+
+-- ============================================================
+-- MEMBER INVOICES — members bill their lead (added later — safe to re-run)
+-- ============================================================
+-- A member's invoice goes to their lead (bill_to_user_id) instead of a client. The lead sets
+-- each member's rate. Once a member finalizes (sends) an invoice it is locked for them, and so
+-- are the hours it billed; only the lead can mark it paid or return it to draft.
+-- Requires the TEAM and PROJECT ASSIGNMENT sections above.
+
+-- ---------- member rate (written only by the service role, like the rest of team_members) ----------
+
+alter table public.team_members
+  add column if not exists hourly_rate numeric not null default 0;
+alter table public.team_members
+  add column if not exists currency text not null default 'COP';
+
+-- ---------- invoices: a client OR a lead as recipient ----------
+
+alter table public.invoices
+  alter column client_id drop not null;
+alter table public.invoices
+  add column if not exists bill_to_user_id uuid references auth.users (id);
+
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'invoices_one_recipient') then
+    alter table public.invoices
+      add constraint invoices_one_recipient check ((client_id is null) <> (bill_to_user_id is null));
+  end if;
+end $$;
+
+create index if not exists invoices_bill_to_user_id_idx on public.invoices (bill_to_user_id);
+
+-- ---------- helpers ----------
+
+create or replace function public.my_lead_id()
+returns uuid
+language sql stable security definer set search_path = ''
+as $$
+  select lead_id from public.team_members
+  where user_id = (select auth.uid()) and role = 'member' and active;
+$$;
+
+create or replace function public.owns_client(c uuid)
+returns boolean
+language sql stable security definer set search_path = ''
+as $$
+  select exists (
+    select 1 from public.clients
+    where id = c and user_id = (select auth.uid())
+  );
+$$;
+
+revoke all on function public.my_lead_id()      from public, anon;
+revoke all on function public.owns_client(uuid) from public, anon;
+grant execute on function public.my_lead_id()      to authenticated, service_role;
+grant execute on function public.owns_client(uuid) to authenticated, service_role;
+
+-- ---------- invoices policies (select_own and select_led stay as defined above) ----------
+
+drop policy if exists "invoices_insert_own" on public.invoices;
+create policy "invoices_insert_own" on public.invoices
+  for insert with check (
+    auth.uid() = user_id
+    and (
+      (client_id is not null and public.owns_client(client_id))
+      or (client_id is null and bill_to_user_id = public.my_lead_id())
+    )
+    and (public.is_admin() or status = 'draft')
+  );
+
+-- Members can only change their drafts, and can never mark an invoice paid themselves.
+drop policy if exists "invoices_update_own" on public.invoices;
+create policy "invoices_update_own" on public.invoices
+  for update
+  using (auth.uid() = user_id and (public.is_admin() or status = 'draft'))
+  with check (
+    auth.uid() = user_id
+    and (
+      (client_id is not null and public.owns_client(client_id))
+      or (client_id is null and bill_to_user_id = public.my_lead_id())
+    )
+    and (public.is_admin() or status in ('draft', 'finalized'))
+  );
+
+drop policy if exists "invoices_delete_own" on public.invoices;
+create policy "invoices_delete_own" on public.invoices
+  for delete using (auth.uid() = user_id and (public.is_admin() or status = 'draft'));
+
+-- ---------- billed hours are locked for members ----------
+-- (has_entries_on lets a member still invoice hours on a project they were removed from.)
+
 drop policy if exists "time_entries_update_own" on public.time_entries;
 create policy "time_entries_update_own" on public.time_entries
-  for update using (auth.uid() = user_id)
+  for update
+  using (auth.uid() = user_id and (invoice_id is null or public.is_admin()))
   with check (
-    auth.uid() = user_id and (public.owns_project(project_id) or public.is_assigned(project_id))
+    auth.uid() = user_id
+    and (
+      public.owns_project(project_id)
+      or public.is_assigned(project_id)
+      or public.has_entries_on(project_id)
+    )
   );
+
+drop policy if exists "time_entries_delete_own" on public.time_entries;
+create policy "time_entries_delete_own" on public.time_entries
+  for delete using (auth.uid() = user_id and (invoice_id is null or public.is_admin()));
+
+-- ---------- members read their lead's profile (the "Bill to" block) ----------
+
+drop policy if exists "profiles_select_lead" on public.profiles;
+create policy "profiles_select_lead" on public.profiles
+  for select to authenticated using (user_id = public.my_lead_id());
+
+-- ---------- lead actions on received invoices ----------
+
+create or replace function public.mark_team_invoice_paid(p_invoice uuid)
+returns void
+language plpgsql security definer set search_path = ''
+as $$
+begin
+  update public.invoices
+     set status = 'paid',
+         paid_at = to_char(now() at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
+   where id = p_invoice
+     and status = 'finalized'
+     and bill_to_user_id = (select auth.uid())
+     and public.is_admin()
+     and public.is_lead_of(user_id);
+  if not found then
+    raise exception 'Invoice not found or it is not waiting for payment';
+  end if;
+end;
+$$;
+
+-- Sends a finalized invoice back to the member as a draft and releases its hours.
+create or replace function public.return_team_invoice(p_invoice uuid)
+returns void
+language plpgsql security definer set search_path = ''
+as $$
+begin
+  update public.invoices
+     set status = 'draft', issued_at = null
+   where id = p_invoice
+     and status = 'finalized'
+     and bill_to_user_id = (select auth.uid())
+     and public.is_admin()
+     and public.is_lead_of(user_id);
+  if not found then
+    raise exception 'Invoice not found or it can no longer be returned';
+  end if;
+  update public.time_entries set invoice_id = null where invoice_id = p_invoice;
+end;
+$$;
+
+revoke all on function public.mark_team_invoice_paid(uuid) from public, anon;
+revoke all on function public.return_team_invoice(uuid)    from public, anon;
+grant execute on function public.mark_team_invoice_paid(uuid) to authenticated;
+grant execute on function public.return_team_invoice(uuid)    to authenticated;
