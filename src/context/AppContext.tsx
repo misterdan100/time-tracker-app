@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
 import { toast } from 'sonner';
+import { format } from 'date-fns';
 import {
   AppState,
   Client,
@@ -1009,13 +1010,35 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // ---------- export / import ----------
 
   const exportData = () => {
-    const state: AppState = { clients, projects, timeEntries, cities, invoices };
+    const exportedAt = new Date();
+    const state: AppState = {
+      version: 2,
+      exportedAt: exportedAt.toISOString(),
+      clients,
+      projects,
+      timeEntries,
+      cities,
+      invoices,
+      profile,
+      // The team's data is only readable here, so the admin's backup is its only copy outside the
+      // database. Kept for reference: importData never writes it back.
+      team: adminView
+        ? {
+            members: teamMembers,
+            assignments,
+            timeEntries: teamEntries,
+            invoices: teamInvoices,
+            profiles: teamProfiles,
+          }
+        : undefined,
+    };
     const dataStr = JSON.stringify(state, null, 2);
     const dataBlob = new Blob([dataStr], { type: 'application/json' });
     const url = URL.createObjectURL(dataBlob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `time-tracker-backup-${new Date().toISOString().split('T')[0]}.json`;
+    // Local date and time (to the second), so several backups on the same day don't collide.
+    link.download = `time-tracker-backup-${format(exportedAt, 'yyyy-MM-dd_HH-mm-ss')}.json`;
     link.click();
     URL.revokeObjectURL(url);
   };
@@ -1054,8 +1077,21 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         const { error } = await supabase.from('time_entries').upsert(rows);
         if (error) throw error;
       }
+      if (data.profile && userId) {
+        const { error } = await supabase.from('profiles').upsert({
+          ...profileToRow(normalizeProfile(data.profile)),
+          user_id: userId,
+          updated_at: new Date().toISOString(),
+        });
+        if (error) throw error;
+      }
       if (dataOwnerId) await fetchAll(dataOwnerId, ownerIsMember);
-      toast.success('Data imported');
+      // Team data belongs to the members' accounts: it is never written from a backup.
+      toast.success('Data imported', {
+        description: data.team
+          ? "Your team's data in this backup is kept for reference only and was not imported."
+          : undefined,
+      });
     } catch (error) {
       console.error('Error importing data:', error);
       toast.error('Could not import data', {

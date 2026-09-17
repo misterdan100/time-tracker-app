@@ -121,10 +121,27 @@ export interface TeamTimeEntry {
   leadInvoiceId: string | null;
 }
 
+/** Read-only copy of the team's data in the admin's backup: kept for safekeeping, never imported. */
+export interface TeamBackup {
+  members: TeamMemberSummary[];
+  assignments: ProjectAssignment[];
+  timeEntries: TeamTimeEntry[];
+  /** Invoices members sent the lead (finalized or paid; their drafts stay private). */
+  invoices: TeamInvoice[];
+  /** Members' profiles by user id. */
+  profiles: Record<string, Profile>;
+}
+
 export interface AppState {
   clients: Client[];
   projects: Project[];
   timeEntries: TimeEntry[];
   cities: string[];
   invoices: Invoice[];
+  /** Backup format; absent in backups made before team data was included. */
+  version?: number;
+  exportedAt?: string;
+  /** The account's studio profile (issuer and payment details). */
+  profile?: Profile | null;
+  team?: TeamBackup;
 }

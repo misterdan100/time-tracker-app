@@ -83,8 +83,7 @@ How it fits together:
   from Team → member → Projects (`public.project_members`). Members see only their assigned projects
   (no client details) and log hours only on those; RLS enforces it. Removing an assignment keeps the
   member's hours, read-only. The admin sees each member's hours per project on the Team card
-  (informational — not part of the admin's own totals or invoices). To undo the SQL, run
-  `supabase-rollback-assignments.sql`.
+  (not part of the admin's own totals). To undo the SQL, run `supabase-rollback-assignments.sql`.
 - **Member invoices:** members bill their lead instead of a client (`invoices.bill_to_user_id`,
   `client_id` null). In the member's account the lead appears as their only "client" (built from the
   lead's studio profile), so numbering, periods and PDFs work the same. The admin sets each member's
@@ -92,6 +91,18 @@ How it fits together:
   member finalizes an invoice it and its hours are locked for them; the admin sees it under
   Invoices → From team and marks it paid or returns it to draft (`mark_team_invoice_paid`,
   `return_team_invoice` RPCs). To undo the SQL, run `supabase-rollback-member-invoices.sql`.
+- **Team hours in client invoices:** a new client invoice can also bill the hours members logged on
+  that client's projects ("Include team hours", on by default), at the client rate and merged into
+  each project line — the PDF looks the same as before. `time_entries.lead_invoice_id` links those
+  hours to the client invoice (independent of the member's own invoice to the lead) and locks them
+  for the member; deleting the invoice releases them. Every invoice is finalized through the
+  `finalize_invoice` RPC, which locks the hours and finalizes the invoice in one transaction. Members
+  with billed hours or sent invoices can only be deactivated, not deleted. To undo the SQL, run
+  `supabase-rollback-team-hours.sql` (and revert the app code: it needs `finalize_invoice`).
+- **Backups:** the admin's **Export JSON** also saves their studio profile and a read-only copy of
+  the team's data (members and rates, assignments, hours with their billing links, invoices members
+  sent, members' profiles). **Import JSON** restores only the admin's own data and profile; the team
+  section is never written back. The file contains payment and ID details — store it privately.
 
 One-time setup:
 
